@@ -159,6 +159,11 @@ export default function Dashboard() {
     }
   };
 
+  const toLocalISOString = (date: Date): string => {
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  };
+
   const getTimeRange = (): { start: string; end: string } => {
     const end = new Date();
     let start = new Date();
@@ -190,8 +195,8 @@ export default function Dashboard() {
     }
 
     return {
-      start: start.toISOString(),
-      end: end.toISOString(),
+      start: toLocalISOString(start),
+      end: toLocalISOString(end),
     };
   };
 
