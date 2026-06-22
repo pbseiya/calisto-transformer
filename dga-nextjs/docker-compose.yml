@@ -9,6 +9,8 @@ services:
       - /home/seiya/projects/calisto-transformer/.env
     environment:
       - NODE_ENV=production
+      - DATABASE_URL=postgresql://postgres:${DB_PASSWORD}@host.docker.internal:5432/dga_monitor
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
       - NEXTAUTH_URL=https://10.28.15.77/dga
       - DGA_USERNAME=admin
       - DGA_PASSWORD=dga2024
