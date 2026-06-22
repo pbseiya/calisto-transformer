@@ -1,0 +1,20 @@
+[Unit]
+Description=DGA Monitor - Modbus Data Collection
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=seiya
+WorkingDirectory=/home/seiya/projects/calisto-transformer
+ExecStart=/usr/bin/python3 dga_monitor.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/seiya/projects/calisto-transformer/dga_monitor.log
+StandardError=append:/home/seiya/projects/calisto-transformer/dga_monitor_error.log
+
+Environment=PYTHONUNBUFFERED=1
+Environment=TMPDIR=/home/seiya/tmp
+
+[Install]
+WantedBy=multi-user.target

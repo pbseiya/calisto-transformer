@@ -1,0 +1,52 @@
+# Environment
+.env
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+dga_monitor.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# OMC / Playwright
+.omo/
+.playwright-mcp/
+
+# Screenshots
+*.png
+
+# Node
+dga-nextjs/node_modules/
+dga-nextjs/.next/
+stitch/node_modules/
+
+# SSL keys (never commit)
+.ssl-backup/
+*.key
+*.crt
+
+# Debug files
+login-errors.txt
+network-requests.txt
+
+# AI artifacts
+AGENTS.md
+CLAUDE.md
+
+# OS files
+.DS_Store
+.idea/
+.vscode/
+.env.local
+tsbuildinfo
+next-env.d.ts

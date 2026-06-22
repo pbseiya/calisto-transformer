@@ -1,0 +1,14 @@
+[Unit]
+Description=DGA Monitor - Modbus DGA Data Collection
+After=network.target
+
+[Service]
+Type=simple
+User=seiya
+WorkingDirectory=/home/pongsak/projects/calisto-transformer
+ExecStart=/usr/bin/python3 /home/pongsak/projects/calisto-transformer/dga_monitor.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
