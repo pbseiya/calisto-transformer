@@ -70,6 +70,7 @@ export default function Chart({
       pointHoverRadius: pointHoverRadius,
       tension: 0.1,
       fill: true,
+      spanGaps: false,
     };
   });
 

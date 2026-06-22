@@ -77,6 +77,7 @@ export default function Dashboard() {
   const [dataSource, setDataSource] = useState<'raw' | 'summary'>('summary');
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [showPoints, setShowPoints] = useState(false);
+  const [smartMode, setSmartMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -90,7 +91,7 @@ export default function Dashboard() {
     if (selectedDevices.length > 0) {
       fetchData();
     }
-  }, [selectedDevices, timeRange, dataSource, customStart, customEnd]);
+  }, [selectedDevices, timeRange, dataSource, customStart, customEnd, smartMode]);
 
   useEffect(() => {
     if (!autoRefresh) return;
@@ -136,7 +137,7 @@ export default function Dashboard() {
       const statsData = await statsResponse.json();
 
       if (readingsData.success && statsData.success) {
-        if ((readingsData.count === 0 || readingsData.data.length === 0) && attempt === 1 && timeRange !== '7d' && timeRange !== '30d') {
+        if (smartMode && (readingsData.count === 0 || readingsData.data.length === 0) && attempt === 1 && timeRange !== '7d' && timeRange !== '30d') {
           setTimeRange('7d');
           return fetchData(2);
         }
@@ -274,6 +275,18 @@ export default function Dashboard() {
                 }`}
               >
                 {showPoints ? 'ON' : 'OFF'}
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <label className="text-base font-medium text-slate-200">Smart:</label>
+              <button
+                onClick={() => setSmartMode(!smartMode)}
+                className={`px-3 py-2 rounded text-base transition-colors ${
+                  smartMode ? 'bg-purple-600 hover:bg-purple-700' : 'bg-slate-700 hover:bg-slate-600'
+                }`}
+              >
+                {smartMode ? 'ON' : 'OFF'}
               </button>
             </div>
 
