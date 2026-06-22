@@ -287,7 +287,7 @@ export default function Dashboard() {
             </div>
 
             <button
-              onClick={fetchData}
+              onClick={() => fetchData()}
               disabled={loading}
               className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-base transition-colors disabled:opacity-50"
             >
