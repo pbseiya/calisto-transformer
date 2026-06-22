@@ -1,3 +1,6 @@
+const buildTimestampColumn = (isSummary: boolean) =>
+  `to_char((${isSummary ? 'window_start' : 'timestamp'}) AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD"T"HH24:MI:SS+07:00') as timestamp`;
+
 import { NextRequest, NextResponse } from 'next/server';
 import pool from '@/lib/db';
 
@@ -18,15 +21,17 @@ export async function GET(request: NextRequest) {
 
     const deviceList = devices.split(',').map(d => d.trim());
     const deviceParams = deviceList.map((_, i) => `$${i + 3}`).join(',');
+    const isSummary = source !== 'raw';
+    const tsCol = buildTimestampColumn(isSummary);
 
     let query = '';
-    let queryParams: any[] = [start, end, ...deviceList];
+    const queryParams: any[] = [start, end, ...deviceList];
 
-    if (source === 'raw') {
+    if (!isSummary) {
       query = `
         SELECT
           device_name,
-          timestamp,
+          ${tsCol},
           hydrogen as h2,
           carbonmonoxide as co,
           water_content as wc,
@@ -46,7 +51,7 @@ export async function GET(request: NextRequest) {
       query = `
         SELECT
           device_name,
-          window_start as timestamp,
+          ${tsCol},
           h2_mean,
           h2_median,
           h2_min,

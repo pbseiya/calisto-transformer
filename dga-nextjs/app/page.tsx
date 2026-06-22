@@ -71,7 +71,7 @@ export default function Dashboard() {
   const [selectedDevices, setSelectedDevices] = useState<string[]>([]);
   const [readings, setReadings] = useState<Reading[]>([]);
   const [statistics, setStatistics] = useState<Statistics[]>([]);
-  const [timeRange, setTimeRange] = useState('7d');
+  const [timeRange, setTimeRange] = useState('24hr');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
   const [dataSource, setDataSource] = useState<'raw' | 'summary'>('summary');
@@ -136,11 +136,9 @@ export default function Dashboard() {
       const statsData = await statsResponse.json();
 
       if (readingsData.success && statsData.success) {
-        // If no data found and we're using a short time range, try expanding it
         if ((readingsData.count === 0 || readingsData.data.length === 0) && attempt === 1 && timeRange !== '7d' && timeRange !== '30d') {
-          console.log('No data found in current time range, expanding to 7 days...');
           setTimeRange('7d');
-          return fetchData(2); // Retry with 7d range
+          return fetchData(2);
         }
 
         setReadings(readingsData.data);

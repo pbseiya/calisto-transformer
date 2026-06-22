@@ -176,8 +176,12 @@ export default function Chart({
         type: 'time' as const,
         time: {
           displayFormats: {
+            second: 'HH:mm:ss',
+            minute: 'HH:mm',
             hour: 'HH:mm',
             day: 'MMM d',
+            week: 'MMM d',
+            month: 'MMM yyyy',
           },
         },
         ticks: {
