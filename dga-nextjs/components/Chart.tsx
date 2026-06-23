@@ -61,16 +61,17 @@ export default function Chart({
       label: device,
       data: deviceData.map((d) => ({
         x: new Date(d.timestamp),
-        y: d[dataKey],
+        y: d[dataKey] != null ? Number(d[dataKey]) : null,
       })),
       borderColor: color,
       backgroundColor: color + '20',
       borderWidth: 3,
       pointRadius: pointRadius,
       pointHoverRadius: pointHoverRadius,
-      tension: 0.1,
-      fill: true,
+      tension: 0,
+      fill: false,
       spanGaps: false,
+
     };
   });
 
@@ -108,7 +109,7 @@ export default function Chart({
     ],
   };
 
-  const options = {
+  const options: any = {
     responsive: true,
     maintainAspectRatio: false,
     interaction: {
@@ -176,6 +177,8 @@ export default function Chart({
       x: {
         type: 'time' as const,
         time: {
+          parser: "yyyy-MM-dd'T'HH:mm:ssxxx",
+          round: 'minute',
           displayFormats: {
             second: 'HH:mm:ss',
             minute: 'HH:mm',
