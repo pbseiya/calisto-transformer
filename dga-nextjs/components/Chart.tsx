@@ -200,7 +200,14 @@ export default function Chart({
         },
       },
       y: {
-        beginAtZero: true,
+        bounds: 'data' as const,
+        suggestedMax: (() => {
+          const allValues = datasets.flatMap(ds =>
+            ds.data.filter((d: any) => d.y != null).map((d: any) => d.y)
+          );
+          const maxVal = allValues.length > 0 ? Math.max(...allValues) : thresholds.danger;
+          return Math.max(maxVal * 1.2, thresholds.danger * 1.15);
+        })(),
         ticks: {
           color: '#cbd5e1',
           callback: (value: any) => `${value} ppm`,

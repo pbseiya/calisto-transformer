@@ -45,8 +45,20 @@ export async function GET(request: NextRequest) {
     if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
       return NextResponse.json({ success: false, message: 'Invalid dates' }, { status: 400 });
     }
-
-    const queryParams: any[] = [start, end, ...deviceList];
+    /* Convert ISO timestamps to Bangkok local time strings */
+    /* DB stores timestamp without time zone in Bangkok local time */
+    /* pg driver interprets ISO strings with Z as UTC, causing mismatch */
+    const pad2 = (n: number) => n.toString().padStart(2, '0');
+    const toBangkokLocal = (isoStr: string): string => {
+      const d = new Date(isoStr);
+      /* Add 7 hours to convert UTC to Bangkok */
+      const b = new Date(d.getTime() + 7 * 60 * 60 * 1000);
+      return b.getUTCFullYear() + '-' + pad2(b.getUTCMonth() + 1) + '-' + pad2(b.getUTCDate())
+        + ' ' + pad2(b.getUTCHours()) + ':' + pad2(b.getUTCMinutes()) + ':' + pad2(b.getUTCSeconds());
+    };
+    const startLocal = toBangkokLocal(start);
+    const endLocal = toBangkokLocal(end);
+    const queryParams: any[] = [startLocal, endLocal, ...deviceList];
     const col = tsColumn(isSummary);
 
     const sql = isSummary
@@ -80,6 +92,8 @@ export async function GET(request: NextRequest) {
       : [];
 
     const startBangkok = toBangkok(startDate);
+    /* Round DOWN to nearest 15-minute boundary to align with DB 15-min windows */
+    startBangkok.setUTCMinutes(Math.floor(startBangkok.getUTCMinutes() / 15) * 15, 0, 0);
     const endBangkok = toBangkok(endDate);
     const slotCount = Math.round((endBangkok.getTime() - startBangkok.getTime()) / intervalMs);
 

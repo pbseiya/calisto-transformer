@@ -34,9 +34,9 @@ export default function DataTable({
     readings.forEach((reading) => {
       const device = reading.device_name;
       if (selectedDevices.includes(device)) {
-        const h2 = reading.h2 ?? reading.h2_mean ?? 0;
-        const co = reading.co ?? reading.co_mean ?? 0;
-        const wc = reading.wc ?? reading.wc_mean ?? 0;
+        const h2 = reading.h2 ?? reading.h2_mean;
+        const co = reading.co ?? reading.co_mean;
+        const wc = reading.wc ?? reading.wc_mean;
 
         if (!latest[device] || new Date(reading.timestamp) > new Date(latest[device].timestamp)) {
           latest[device] = {
@@ -72,7 +72,8 @@ export default function DataTable({
     });
   }, [deviceReadings, sortColumn, sortDirection]);
 
-  const getStatus = (value: number, type: 'h2' | 'co' | 'wc'): 'normal' | 'warning' | 'danger' => {
+  const getStatus = (value: number | null | undefined, type: 'h2' | 'co' | 'wc'): 'normal' | 'warning' | 'danger' => {
+    if (value == null) return 'normal';
     if (value >= thresholds[type].danger) return 'danger';
     if (value >= thresholds[type].warning) return 'warning';
     return 'normal';
@@ -167,8 +168,9 @@ export default function DataTable({
                     ? 'warning'
                     : 'normal';
 
-              const formatValue = (value: number): string => {
-                return value === 0 ? '—' : value.toFixed(2);
+              const formatValue = (value: number | null | undefined): string => {
+                if (value == null) return '—';
+                return value.toFixed(2);
               };
 
               return (
