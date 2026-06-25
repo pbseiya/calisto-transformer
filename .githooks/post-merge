@@ -1,0 +1,51 @@
+#!/bin/bash
+# Post-merge hook: build + deploy + screenshot + Telegram notify
+set -euo pipefail
+
+BOT_TOKEN="8749140014:AAExxdykao56dzA26lmkf4zyOsUbN0w8sE8"
+CHAT_ID="-1004499459935"
+PROJECT_DIR="/home/seiya/projects/calisto-transformer/dga-nextjs"
+SCREENSHOT="/tmp/dga-deploy-$(date +%s).png"
+
+echo "🔨 Starting build..."
+cd "$PROJECT_DIR"
+npm run build > /tmp/build.log 2>&1 || { echo " Build failed"; cat /tmp/build.log; exit 1; }
+
+echo "📋 Copying static files..."
+cp -r .next/static .next/standalone/.next/static
+cp -r public .next/standalone
+
+echo "🔄 Restarting PM2..."
+pm2 restart dga-app > /dev/null 2>&1
+sleep 5
+
+echo "🏥 Health check..."
+if curl -sf http://localhost:3001/dga > /dev/null; then
+    echo "✅ Dashboard running"
+else
+    echo "❌ Dashboard not responding"
+    exit 1
+fi
+
+echo " Taking screenshot..."
+cd "$PROJECT_DIR"
+node dga-screenshot.js "$SCREENSHOT" 2>/dev/null || { echo "⚠️ Screenshot failed"; SCREENSHOT=""; }
+
+echo "📤 Sending Telegram notification..."
+MSG="🚀 DGA Dashboard deployed\n\nHost: $(hostname)\nTime: $(date "+%Y-%m-%d %H:%M:%S")\nBranch: $(git branch --show-current)\nCommit: $(git log -1 --format="%h %s")"
+
+if [ -n "$SCREENSHOT" ] && [ -f "$SCREENSHOT" ]; then
+    curl -s "https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto" \
+      -F "chat_id=${CHAT_ID}" \
+      -F "photo=@${SCREENSHOT}" \
+      -F "caption=${MSG}" \
+      -F "parse_mode=HTML"
+    rm -f "$SCREENSHOT"
+else
+    curl -s "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+      -d "chat_id=${CHAT_ID}" \
+      -d "text=${MSG}" \
+      -d "parse_mode=HTML"
+fi
+
+echo "✅ Done"
