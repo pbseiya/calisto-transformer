@@ -38,6 +38,7 @@ interface ChartProps {
   thresholds: { warning: number; danger: number };
   selectedDevices: string[];
   showPoints?: boolean;
+  timeRange?: string;
 }
 
 export default function Chart({
@@ -48,6 +49,7 @@ export default function Chart({
   thresholds,
   selectedDevices,
   showPoints = false,
+  timeRange = '24hr',
 }: ChartProps) {
   const chartRef = useRef<any>(null);
 
@@ -179,14 +181,29 @@ export default function Chart({
         time: {
           parser: "yyyy-MM-dd'T'HH:mm:ssxxx",
           round: 'minute',
-          displayFormats: {
-            second: 'HH:mm:ss',
-            minute: 'HH:mm',
-            hour: 'HH:mm',
-            day: 'MMM d',
-            week: 'MMM d',
-            month: 'MMM yyyy',
-          },
+          displayFormats: (() => {
+            const formats: Record<string, string> = {
+              second: 'HH:mm:ss',
+              minute: 'HH:mm',
+              hour: 'HH:mm',
+              day: 'MMM d',
+              week: 'MMM d',
+              month: 'MMM yyyy',
+            };
+            /* For ranges > 1 day, show date in hour format */
+            if (['7d', '30d', 'custom'].includes(timeRange)) {
+              formats.hour = 'MMM d HH:mm';
+              formats.day = 'MMM d';
+            }
+            return formats;
+          })(),
+          unit: (() => {
+            if (timeRange === '15min' || timeRange === '1hr') return 'minute';
+            if (timeRange === '6hr' || timeRange === '24hr') return 'hour';
+            if (timeRange === '7d') return 'hour';
+            if (timeRange === '30d' || timeRange === 'custom') return 'day';
+            return 'hour';
+          })(),
         },
         ticks: {
           color: '#cbd5e1',

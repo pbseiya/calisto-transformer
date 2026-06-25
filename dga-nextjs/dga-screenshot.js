@@ -9,14 +9,25 @@ const path = process.argv[2] || "/tmp/screenshot.png";
   await page.goto("http://localhost:3001/dga", { waitUntil: "domcontentloaded", timeout: 15000 });
   await page.waitForTimeout(2000);
   
-  const usernameInput = page.locator('input[type="text"], input[name="username"], input[placeholder*="user" i]');
-  const passwordInput = page.locator('input[type="password"]');
-  const loginBtn = page.locator('button[type="submit"], button:has-text("Login"), button:has-text("เข้าสู่ระบบ")');
+  /* Login */
+  const usernameInput = page.locator("input[type=\"text\"], input[name=\"username\"], input[placeholder*=\"user\" i]");
+  const passwordInput = page.locator("input[type=\"password\"]");
+  const loginBtn = page.locator("button[type=\"submit\"], button:has-text(\"Login\"), button:has-text(\"เข้าสู่ระบบ\")");
   
   await usernameInput.fill("admin");
   await passwordInput.fill("dga2024");
   await loginBtn.click();
   await page.waitForTimeout(5000);
+  
+  /* Click 7d time range button */
+  const sevenDaysBtn = page.locator("button:has-text(\"7d\")");
+  const btnText = await sevenDaysBtn.textContent().catch(() => null);
+  console.log("7d button found:", btnText ? "yes" : "no", "- text:", btnText || "null");
+  if (btnText) {
+    await sevenDaysBtn.click();
+    await page.waitForTimeout(3000);
+    console.log("Clicked 7d, waiting for chart update");
+  }
   
   await page.screenshot({ path: path, fullPage: false });
   console.log("Screenshot saved to", path);

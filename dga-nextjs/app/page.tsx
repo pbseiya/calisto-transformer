@@ -330,6 +330,7 @@ export default function Dashboard() {
               thresholds={THRESHOLDS.h2}
               selectedDevices={selectedDevices}
               showPoints={showPoints}
+              timeRange={timeRange}
             />
 
             <Chart
@@ -340,6 +341,7 @@ export default function Dashboard() {
               thresholds={THRESHOLDS.co}
               selectedDevices={selectedDevices}
               showPoints={showPoints}
+              timeRange={timeRange}
             />
 
             <Chart
@@ -350,6 +352,7 @@ export default function Dashboard() {
               thresholds={THRESHOLDS.wc}
               selectedDevices={selectedDevices}
               showPoints={showPoints}
+              timeRange={timeRange}
             />
           </div>
 
