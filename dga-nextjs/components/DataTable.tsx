@@ -33,20 +33,26 @@ export default function DataTable({
 
     readings.forEach((reading) => {
       const device = reading.device_name;
-      if (selectedDevices.includes(device)) {
-        const h2 = reading.h2 ?? reading.h2_mean;
-        const co = reading.co ?? reading.co_mean;
-        const wc = reading.wc ?? reading.wc_mean;
+      if (!selectedDevices.includes(device)) return;
+      
+      const h2 = reading.h2 ?? reading.h2_mean;
+      const co = reading.co ?? reading.co_mean;
+      const wc = reading.wc ?? reading.wc_mean;
+      
+      /* Only consider readings with actual H2 data */
+      if (h2 == null) return;
 
-        if (!latest[device] || new Date(reading.timestamp) > new Date(latest[device].timestamp)) {
-          latest[device] = {
-            device_name: device,
-            h2,
-            co,
-            wc,
-            timestamp: reading.timestamp,
-          };
-        }
+      const ts = new Date(reading.timestamp).getTime();
+      const existingTs = latest[device] ? new Date(latest[device].timestamp).getTime() : 0;
+
+      if (ts > existingTs) {
+        latest[device] = {
+          device_name: device,
+          h2,
+          co,
+          wc,
+          timestamp: reading.timestamp,
+        };
       }
     });
 

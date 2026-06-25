@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
-import DataTable from '@/components/DataTable';
+import RealtimeTable from '@/components/RealtimeTable';
 import DeviceFilter from '@/components/DeviceFilter';
 import TimeRangeFilter from '@/components/TimeRangeFilter';
 import StatsPanel from '@/components/StatsPanel';
@@ -70,6 +70,7 @@ export default function Dashboard() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [selectedDevices, setSelectedDevices] = useState<string[]>([]);
   const [readings, setReadings] = useState<Reading[]>([]);
+  const [latestReadings, setLatestReadings] = useState<Reading[]>([]);
   const [statistics, setStatistics] = useState<Statistics[]>([]);
   const [timeRange, setTimeRange] = useState('24hr');
   const [customStart, setCustomStart] = useState('');
@@ -90,6 +91,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (selectedDevices.length > 0) {
       fetchData();
+      fetchLatestReadings();
     }
   }, [selectedDevices, timeRange, dataSource, customStart, customEnd, smartMode]);
 
@@ -116,6 +118,20 @@ export default function Dashboard() {
     } catch (err) {
       setError('Failed to fetch devices');
       setConnectionStatus('disconnected');
+    }
+  };
+
+  const fetchLatestReadings = async () => {
+    try {
+      const response = await fetch(
+        '/dga/api/readings-latest?devices=' + selectedDevices.join(',')
+      );
+      const data = await response.json();
+      if (data.success) {
+        setLatestReadings(data.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch latest readings:', err);
     }
   };
 
@@ -355,12 +371,9 @@ export default function Dashboard() {
               timeRange={timeRange}
             />
           </div>
-
           <div className="lg:col-span-2">
-            <DataTable
-              readings={readings}
+            <RealtimeTable
               selectedDevices={selectedDevices}
-              thresholds={THRESHOLDS}
             />
           </div>
         </div>

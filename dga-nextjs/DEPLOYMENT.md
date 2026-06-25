@@ -1,194 +1,110 @@
-# DGA Dashboard Deployment Guide
+# DGA Deployment Guide
 
-## Prerequisites
-- SSH access to Thinkstation (seiya@100.123.214.57)
-- Docker and Docker Compose installed on Thinkstation
-- Nginx installed on Thinkstation
-- PostgreSQL database running on Thinkstation
+## Infrastructure
 
-## Step 1: Clone and Setup Repository
+- **Host**: seiya-ThinkStation (100.123.214.57 via Tailscale, 10.28.15.77 local)
+- **OS**: Ubuntu Linux
+- **Node.js**: 20 (installed directly on host — Docker builds fail due to TLS timeouts)
+- **PostgreSQL**: Docker container `postgres_db`
+- **Process Manager**: PM2
+- **Web Server**: Nginx (HTTPS reverse proxy)
+- **SSL**: Self-signed cert at `/etc/nginx/ssl/server.{crt,key}`
 
-On Thinkstation:
+## Services
+
+### Python Collector (`dga-monitor.service`)
 ```bash
-cd /home/seiya/projects/calisto-transformer
-git clone -b feature/bubble-ui git@github.com:pbseiya/calisto-transformer.git
-cd dga-nextjs
+sudo systemctl status dga-monitor
+sudo journalctl -u dga-monitor -f
+```
+- Polls devices every 15s via Modbus TCP
+- Logs to `/var/log/dga_monitor.log` (or stdout)
+- Auto-restart on failure (10s delay)
+
+### Next.js Dashboard (PM2)
+```bash
+pm2 status
+pm2 logs dga-app
+pm2 restart dga-app
+```
+- Runs on port 3001
+- Managed via `ecosystem.config.js`
+
+### Nginx
+```bash
+sudo systemctl status nginx
+sudo nginx -t
+sudo systemctl reload nginx
+```
+- Reverse proxy: `https://10.28.15.77/dga` → `http://localhost:3001/dga`
+- IP allow: 10.28.0.0/16, 10.29.0.0/16, 100.64.0.0/10 (Tailscale), 192.168.0.0/16 (VPN)
+
+## Deployment Workflow
+
+### Manual Deploy
+```bash
+cd ~/projects/calisto-transformer/dga-nextjs
+npm run build
+cp -r .next/static .next/standalone/.next/static
+cp -r public .next/standalone
+pm2 restart dga-app
 ```
 
-## Step 2: Generate Self-Signed SSL Certificate
+### Auto-Deploy (Git Hook)
+Post-merge hook at `.git/hooks/post-merge` triggers on every `git pull`:
+1. `npm run build`
+2. Copy static files to standalone
+3. `pm2 restart dga-app`
+4. Health check (`curl localhost:3001/dga`)
+5. Take dashboard screenshot via Playwright
+6. Send photo + caption to Telegram
 
-```bash
-sudo mkdir -p /etc/nginx/ssl
-sudo openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
-  -keyout /etc/nginx/ssl/server.key \
-  -out /etc/nginx/ssl/server.crt \
-  -subj "/C=TH/ST=Bangkok/L=Bangkok/O=IRPC/CN=10.28.15.77"
-sudo chmod 600 /etc/nginx/ssl/server.key
-sudo chmod 644 /etc/nginx/ssl/server.crt
+### Telegram Notifications
+- **Bot**: Think-Hermes-ProjectB (`8749140014:AAExxdykao56dzA26lmkf4zyOsUbN0w8sE8`)
+- **Supergroup**: Deployment Alert (`-1004499459935`)
+- **Topic**: DGA (thread_id: `6`)
+
+## Database
+
+### Connection
+```
+postgresql://postgres:mysecretpassword@localhost:5432/dga_monitor
 ```
 
-## Step 3: Configure Nginx
+### Tables
+- `dga_readings` — Raw 15s readings (retention: 3 months)
+- `dga_readings_15min` — 15-min aggregated summaries (retention: 5 years)
 
-```bash
-sudo tee /etc/nginx/sites-available/dga-dashboard << 'NGINX'
-server {
-    listen 443 ssl http2;
-    server_name 10.28.15.77;
-
-    ssl_certificate /etc/nginx/ssl/server.crt;
-    ssl_certificate_key /etc/nginx/ssl/server.key;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-
-    allow 10.28.0.0/16;
-    deny all;
-
-    add_header X-Frame-Options "SAMEORIGIN";
-    add_header X-Content-Type-Options "nosniff";
-    add_header Strict-Transport-Security "max-age=31536000" always;
-
-    location /dga {
-        proxy_pass http://localhost:3001/dga;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-Prefix /dga;
-        proxy_cache_bypass $http_upgrade;
-    }
-
-    location = / {
-        return 302 /dga;
-    }
-}
-
-server {
-    listen 80;
-    server_name 10.28.15.77;
-    return 301 https://$host$request_uri;
-}
-NGINX
-
-sudo ln -sf /etc/nginx/sites-available/dga-dashboard /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
-```
-
-## Step 4: Test IRPC AD API Reachability
-
-```bash
-curl -X POST http://devmscenter-api.irpc.in.th/Auth \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"test","password":"test"}'
-```
-
-If the API is not reachable, the fallback credentials (admin/dga2024) will work.
-
-## Step 5: Deploy Docker Container
-
-```bash
-cd /home/seiya/projects/calisto-transformer/dga-nextjs
-docker compose build
-docker compose up -d
-```
-
-## Step 6: Verify Deployment
-
-```bash
-# Wait for health check
-sleep 15
-
-# Test locally
-curl -fk https://localhost/dga
-
-# Test from external IP
-curl -fk https://10.28.15.77/dga
-```
-
-## Step 7: Setup Git Hook for Auto-Deploy (Optional)
-
-On Thinkstation:
-```bash
-mkdir -p ~/repos/dga-nextjs.git
-cd ~/repos/dga-nextjs.git
-git init --bare
-
-cat > hooks/post-receive << 'HOOK'
-#!/bin/bash
-while read oldrev newrev refname; do
-    if [ "$refname" = "refs/heads/feature/bubble-ui" ]; then
-        echo "🚀 Auto-deploying DGA Dashboard..."
-        cd /home/seiya/projects/calisto-transformer/dga-nextjs
-        git pull origin feature/bubble-ui
-        /home/seiya/projects/calisto-transformer/dga-nextjs/deploy.sh
-    fi
-done
-HOOK
-chmod +x hooks/post-receive
-```
-
-On local machine, add remote:
-```bash
-cd /home/pongsak/projects/calisto-transformer/dga-nextjs
-git remote add deploy ssh://seiya@100.123.214.57/home/seiya/repos/dga-nextjs.git
-```
-
-Now you can deploy with:
-```bash
-git push deploy feature/bubble-ui
-```
-
-## Manual Deployment
-
-After making changes:
-```bash
-cd /home/seiya/projects/calisto-transformer/dga-nextjs
-./deploy.sh
-```
-
-## Access
-
-- URL: https://10.28.15.77/dga
-- Login: Use your IRPC Active Directory credentials
-- Fallback: admin / dga2024 (for testing)
+### Aggregation
+Cron job runs `dga_aggregate.py` every 15 minutes to populate summary table.
 
 ## Troubleshooting
 
-### Check container logs:
+### API returns null data
+- Check timezone: DB stores Bangkok local time, pg driver may interpret as UTC
+- Fix: `toBangkokLocal()` in `app/api/readings/route.ts`
+
+### Chart Y-axis capped at 500 ppm
+- DA115 has values ~1221 ppm (above IEC danger level)
+- Fix: `suggestedMax` calculation in `components/Chart.tsx`
+
+### Real-Time Data table shows dashes
+- Old DataTable pulled from summary table (missing unaggregated devices)
+- Fix: Use `/api/readings/now` endpoint + `RealtimeTable.tsx`
+
+### PM2 restart count increasing
+- Check logs: `pm2 logs dga-app --lines 50`
+- Common: `host.docker.internal` DNS failure (Docker-specific hostname)
+- Fix: Use `localhost` in DATABASE_URL
+
+### Build fails with exit 0 but no standalone output
+- Check for TypeScript errors: `npm run build` output
+- Common: `normalized: true` in Chart.js config causes silent failure
+- Fix: Remove invalid Chart.js options
+
+## Backup
+
+Database backup script runs daily via cron:
 ```bash
-docker compose logs -f
+docker exec postgres_db pg_dump -U postgres dga_monitor > /backup/dga_monitor_$(date +%Y%m%d).sql
 ```
-
-### Check container status:
-```bash
-docker compose ps
-```
-
-### Restart container:
-```bash
-docker compose restart
-```
-
-### Check Nginx logs:
-```bash
-sudo tail -f /var/log/nginx/error.log
-sudo tail -f /var/log/nginx/access.log
-```
-
-### Test IRPC AD API:
-```bash
-curl -X POST http://devmscenter-api.irpc.in.th/Auth \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"your_username","password":"your_password"}'
-```
-
-## Important Notes
-
-- Port 3001 is used for the Next.js application (NOT port 3000)
-- The application runs under basePath `/dga`
-- SSL is required for secure communication
-- Access is restricted to the 10.28.0.0/16 subnet
-- Database connection uses `host.docker.internal` for Docker networking
-- Session cookies are HTTP-only, secure, and have a max age of 8 hours
