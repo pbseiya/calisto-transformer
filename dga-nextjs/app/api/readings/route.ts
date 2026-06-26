@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import pool from '@/lib/db';
+import { toBangkokLocal } from '@/lib/timezone';
 
 const tsColumn = (summary: boolean) =>
   summary
@@ -48,14 +49,6 @@ export async function GET(request: NextRequest) {
     /* Convert ISO timestamps to Bangkok local time strings */
     /* DB stores timestamp without time zone in Bangkok local time */
     /* pg driver interprets ISO strings with Z as UTC, causing mismatch */
-    const pad2 = (n: number) => n.toString().padStart(2, '0');
-    const toBangkokLocal = (isoStr: string): string => {
-      const d = new Date(isoStr);
-      /* Add 7 hours to convert UTC to Bangkok */
-      const b = new Date(d.getTime() + 7 * 60 * 60 * 1000);
-      return b.getUTCFullYear() + '-' + pad2(b.getUTCMonth() + 1) + '-' + pad2(b.getUTCDate())
-        + ' ' + pad2(b.getUTCHours()) + ':' + pad2(b.getUTCMinutes()) + ':' + pad2(b.getUTCSeconds());
-    };
     const startLocal = toBangkokLocal(start);
     const endLocal = toBangkokLocal(end);
     const queryParams: any[] = [startLocal, endLocal, ...deviceList];
