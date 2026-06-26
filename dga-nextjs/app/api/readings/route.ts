@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import pool from '@/lib/db';
 import { toBangkokLocal } from '@/lib/timezone';
+import { fillGaps } from '@/lib/gapFill';
 
 const tsColumn = (summary: boolean) =>
   summary
@@ -90,46 +91,13 @@ export async function GET(request: NextRequest) {
     const endBangkok = toBangkok(endDate);
     const slotCount = Math.round((endBangkok.getTime() - startBangkok.getTime()) / intervalMs);
 
-    const filledRows: DataRow[] = [];
-    const deviceStats: any = {};
-
-    for (const dev of deviceList) {
-      const devRows = rawRows.filter(r => r.device_name === dev);
-      const byTs = new Map<string, DataRow>();
-      for (const r of devRows) {
-        byTs.set(r.timestamp, r);
-      }
-
-      let original = 0;
-      let missing = 0;
-
-      for (let i = 0; i <= slotCount; i++) {
-        const slotBangkok = new Date(startBangkok.getTime() + i * intervalMs);
-        const slotTs = fmt(slotBangkok);
-
-        const existing = byTs.get(slotTs);
-        if (existing) {
-          filledRows.push(existing);
-          original++;
-        } else {
-          const empty: DataRow = { device_name: dev, timestamp: slotTs };
-          for (const k of valueKeys) {
-            if (k.endsWith('_mean') || k.endsWith('_median') ||
-                k.endsWith('_min') || k.endsWith('_max') || k.endsWith('_stdev')) {
-              empty[k] = null;
-            } else if (/count/.test(k)) {
-              empty[k] = 0;
-            } else {
-              empty[k] = null;
-            }
-          }
-          filledRows.push(empty);
-          missing++;
-        }
-      }
-
-      deviceStats[dev] = { original, missing, total: original + missing };
-    }
+    const { filledRows, deviceStats } = fillGaps(
+      rawRows,
+      deviceList,
+      startDate,
+      endDate,
+      intervalMs
+    );
 
     return NextResponse.json({
       success: true,
