@@ -50,3 +50,4 @@ CLAUDE.md
 .env.local
 tsbuildinfo
 next-env.d.ts
+test-password-toggle.js
