@@ -4,20 +4,16 @@ import pool from "@/lib/db";
 export async function GET(request: NextRequest) {
   try {
     const devices = request.nextUrl.searchParams.get("devices");
-
     if (!devices) {
       return NextResponse.json({ success: false, message: "Missing devices parameter" }, { status: 400 });
     }
-
     const deviceList = devices.split(",").map((d) => d.trim());
-    const deviceParams = deviceList.map((_, i) => `$${i + 1}`).join(",");
-
-    const tsCol = "to_char(timestamp AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD\"T\"HH24:MI:SS+07:00') as timestamp";
+    const deviceParams = deviceList.map((_, i) => "$" + (i + 1)).join(",");
 
     const sql = `
       SELECT DISTINCT ON (device_name)
         device_name,
-        ${tsCol},
+        to_char(timestamp AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD"T"HH24:MI:SS+07:00') as timestamp,
         hydrogen as h2,
         carbonmonoxide as co,
         water_content as wc
