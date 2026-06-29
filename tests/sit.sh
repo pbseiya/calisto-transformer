@@ -92,4 +92,13 @@ fi
 # Cleanup
 rm -f "$COOKIE_FILE"
 
+# 5. ทดสอบ Anomaly Detection API
+log "🤖 Testing Anomaly Detection API..."
+if bash "$REPO_DIR/tests/sit-anomaly.sh"; then
+  success "Anomaly API SIT passed"
+else
+  fail "Anomaly API SIT failed"
+  exit 1
+fi
+
 log "✅ All SIT tests passed"

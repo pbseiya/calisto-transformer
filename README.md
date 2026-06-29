@@ -52,6 +52,21 @@ Collects real-time dissolved gas analysis data from industrial monitoring device
 - **Systemd**: Auto-restart for Python collector (10s failure delay)
 - **Post-merge Git Hook**: Auto build + deploy + Telegram notification on `git pull`
 
+### 5. Anomaly Detection API (FastAPI)
+- **Base URL**: `https://100.123.214.57/dga-api`
+- **Swagger UI**: `https://100.123.214.57/dga-api/docs`
+- **ReDoc**: `https://100.123.214.57/dga-api/redoc`
+- **OpenAPI JSON**: `https://100.123.214.57/dga-api/openapi.json`
+- **Endpoints**:
+  - `GET /health` - Health check
+  - `GET /devices` - List all devices
+  - `GET /anomaly?device=DA115` - Detect anomalies
+  - `GET /drift?device=DA115` - Detect drift
+  - `GET /trend?device=DA115` - Detect trend
+  - `POST /retrain` - Retrain baseline model
+- **Model**: Hybrid Z-Score v1 (21 devices)
+- **PM2 Service**: `dga-anomaly-api` (port 8000)
+
 ## Database Schema
 
 ### `dga_readings` (Raw)
@@ -94,6 +109,56 @@ Aggregated 15-minute windows with statistics.
 | `h2_alarm_count` | INTEGER | Warning alarms in window |
 | `co_alarm_count` | INTEGER | Warning alarms in window |
 | `wc_alarm_count` | INTEGER | Warning alarms in window |
+
+## CI/CD Pipeline Status
+
+### Automated Workflow
+```
+Developer: git push → main
+         ↓
+GitHub Actions (Cloud) — Automatic
+   ├─ Lint
+   ├─ Type Check
+   ├─ Build Test
+   └─ Unit Tests (34 tests)
+         ↓
+Developer: ssh → ThinkStation → git pull
+         ↓
+Post-Merge Hook — Automatic
+   ├─ npm run build
+   ├─ pm2 restart (deploy)
+   ├─ Health check
+   ├─ SIT (System Integration Test)
+   ├─ Playwright Screenshot
+   └─ Telegram Alert ✅/❌
+         ↓
+Health Monitor Cron — Every 5 minutes
+   ├─ Check dashboard HTTP
+   ├─ Check PM2 status
+   ├─ Check API endpoints
+   └─ Telegram Alert 🚨/✅ (if down/recovery)
+```
+
+### Alert Triggers
+
+| Event | Alert | Via |
+|-------|-------|-----|
+| `git push` → CI fail | ✅ | GitHub PR status |
+| `git pull` → Build fail | ✅ | Telegram  |
+| `git pull` → Deploy fail | ✅ | Telegram 🚨 |
+| `git pull` → SIT fail | ✅ | Telegram 🚨 |
+| Web down (no deploy) | ✅ | Telegram every 5 min |
+| Web recovery | ✅ | Telegram ✅ |
+
+### Unit Tests (34 tests)
+
+| Test Suite | Tests | Coverage |
+|------------|-------|----------|
+| timezone.test.ts | 10 | UTC → Bangkok conversion |
+| gapFill.test.ts | 9 | 15-min slot filling logic |
+| readingsNow.test.ts | 8 | DISTINCT ON query + response |
+| statistics.test.ts | 7 | Aggregate functions + params |
+| **Total** | **34** | **+40% coverage** |
 
 ## Key Technical Challenges Solved
 
