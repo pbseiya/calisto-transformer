@@ -4,7 +4,7 @@ Modbus DGA (Dissolved Gas Analysis) monitoring system for power transformers.
 
 ## Overview
 
-Collects real-time dissolved gas analysis data from industrial monitoring devices via Modbus TCP every 15 seconds. Stores data in PostgreSQL for historical analysis and visualization through a Next.js dashboard.
+Collects real-time dissolved gas analysis data from industrial monitoring devices via Modbus TCP every 15 seconds. Stores data in PostgreSQL for historical analysis and visualization through a Next.js dashboard with automated CI/CD pipeline.
 
 ## Architecture
 
@@ -38,8 +38,15 @@ Collects real-time dissolved gas analysis data from industrial monitoring device
 - **RealtimeTable**: Live-updating table fetching from `/api/readings/now` every 15s
 - **Filters**: Time range (15m/1h/6h/24h/7d/30d/custom), data source (raw/summary), smart mode
 - **Smart Mode**: Auto-extends time range when no data found in selected range
+- **Password Toggle**: Show/hide password on login page (eye icon)
 
-### 4. Infrastructure
+### 4. CI/CD Pipeline
+- **GitHub Actions**: Lint + type check + build + 34 unit tests on every push/PR
+- **Git Hook**: Auto build + deploy + SIT + screenshot + Telegram alert on `git pull`
+- **Health Monitor**: Cron every 5 minutes checks dashboard health
+- **Unit Tests**: 34 tests covering timezone, gap filling, API queries, statistics
+
+### 5. Infrastructure
 - **PM2**: Process manager for Next.js app (port 3001)
 - **Nginx**: HTTPS reverse proxy with self-signed certs
 - **Systemd**: Auto-restart for Python collector (10s failure delay)
@@ -94,28 +101,85 @@ Aggregated 15-minute windows with statistics.
 - Database stores `timestamp without time zone` in Asia/Bangkok local time
 - `pg` Node.js driver interprets ISO strings with `Z` suffix as UTC
 - **Solution**: Convert ISO timestamps to Bangkok local time strings in JavaScript before query
-- File: `app/api/readings/route.ts` - `toBangkokLocal()` function
+- File: `lib/timezone.ts` - `toBangkokLocal()` function
 - Pool uses `SET TIME ZONE 'Asia/Bangkok'` on every connection
 
 ### 15-Minute Window Alignment
-- Summary table uses 15-minute windows aligned to HH:00, HH:15, HH:30, HH:45
+- Summary table uses windows aligned to HH:00/HH:15/HH:30/HH:45
 - API gap-filling must round start time DOWN to nearest 15-minute boundary
-- File: `app/api/readings/route.ts` - `startBangkok.setUTCMinutes(Math.floor(.../15)*15,0,0)`
+- File: `lib/gapFill.ts` - `fillGaps()` function
 
 ### Chart.js Y-Axis Scaling
 - `bounds: 'data'` alone doesn't scale high-value devices (DA115 ~1221 ppm)
-- **Solution**: Calculate `suggestedMax` from actual data (max value × 1.2 or danger threshold × 1.15)
+- **Solution**: Dynamic `suggestedMax` calculation from actual data
 - File: `components/Chart.tsx`
 
 ### Time Range Axis Labels
 - Default `displayFormats.hour` shows `HH:mm` only (no date)
 - **Solution**: Dynamic `displayFormats` based on timeRange prop (`MMM d HH:mm` for 7d/30d)
-- File: `components/Chart.tsx`, `app/page.tsx` (passes `timeRange` prop)
+- Files: `components/Chart.tsx`, `app/page.tsx`
 
 ### Real-Time Data Visibility
-- Old approach: DataTable pulled from summary table (missing data for unaggregated devices)
-- **Solution**: New endpoint `/api/readings/now` queries raw table with `DISTINCT ON (device_name)`
-- File: `app/api/readings/now/route.ts`, `components/RealtimeTable.tsx`
+- Old DataTable pulled from summary table (missing unaggregated devices)
+- **Solution**: New endpoint `/api/readings/now` queries raw table with `DISTINCT ON`
+- Files: `lib/readingsNow.ts`, `components/RealtimeTable.tsx`
+
+### CSS Not Loading (White/Black Screen)
+- Missing `basePath: '/dga'` in next.config.js
+- Root `package-lock.json` confused Next.js workspace root
+- **Solution**: Add basePath + remove root package-lock.json
+- File: `next.config.js`
+
+## CI/CD Pipeline
+
+### Automated Workflow
+
+```
+Developer: git push → main
+         ↓
+GitHub Actions (Cloud) — Automatic
+   ├─ Lint
+   ├─ Type Check
+   ├─ Build Test
+   └─ Unit Tests (34 tests)
+         ↓
+Developer: ssh → ThinkStation → git pull
+         ↓
+Post-Merge Hook — Automatic
+   ├─ npm run build
+   ├─ pm2 restart (deploy)
+   ├─ Health check
+   ├─ SIT (System Integration Test)
+   ├─ Playwright Screenshot
+   └─ Telegram Alert ✅/❌
+         ↓
+Health Monitor Cron — Every 5 minutes
+   ├─ Check dashboard HTTP
+   ├─ Check PM2 status
+   ├─ Check API endpoints
+   └─ Telegram Alert 🚨/✅ (if down/recovery)
+```
+
+### Alert Triggers
+
+| Event | Alert | Via |
+|-------|-------|-----|
+| `git push` → CI fail | ✅ | GitHub PR status |
+| `git pull` → Build fail | ✅ | Telegram 🚨 |
+| `git pull` → Deploy fail | ✅ | Telegram 🚨 |
+| `git pull` → SIT fail | ✅ | Telegram 🚨 |
+| Web down (no deploy) | ✅ | Telegram every 5 min |
+| Web recovery | ✅ | Telegram ✅ |
+
+### Unit Tests (34 tests)
+
+| Test Suite | Tests | Coverage |
+|------------|-------|----------|
+| timezone.test.ts | 10 | UTC → Bangkok conversion |
+| gapFill.test.ts | 9 | 15-min slot filling logic |
+| readingsNow.test.ts | 8 | DISTINCT ON query + response |
+| statistics.test.ts | 7 | Aggregate functions + params |
+| **Total** | **34** | **+40% coverage** |
 
 ## Deployment
 
@@ -123,9 +187,10 @@ Aggregated 15-minute windows with statistics.
 ```bash
 cd ~/projects
 git clone <repository-url>
-cd calisto-transformer/dga-nextjs
+cd calisto-transformer
 
 # Install dependencies
+cd dga-nextjs
 npm install
 
 # Copy environment
@@ -148,8 +213,9 @@ Post-merge hook (`.git/hooks/post-merge`) triggers on every `git pull`:
 2. Copy static files to standalone
 3. `pm2 restart dga-app`
 4. Health check (`curl localhost:3001/dga`)
-5. Take dashboard screenshot via Playwright
-6. Send photo + caption to Telegram group "Deployment Alert" → DGA topic
+5. SIT test (`bash tests/sit.sh`)
+6. Take dashboard screenshot via Playwright
+7. Send photo + caption to Telegram group "Deployment Alert" → DGA topic
 
 ### Telegram Notifications
 - **Bot**: Think-Hermes-ProjectB (`8749140014:AAExxdykao56dzA26lmkf4zyOsUbN0w8sE8`)
@@ -205,12 +271,36 @@ HAVING MAX(h2_alarm_lv2) = true OR MAX(co_alarm_lv2) = true;
 ```
 calisto-transformer/
 ├── README.md
+├── .github/workflows/ci.yml       # GitHub Actions CI
+├── .gitignore
+├── .git/hooks/
+│   └── post-merge                 # Auto deploy hook
 ├── dga_next.sh                    # Helper script (kill + copy + restart)
 ├── dga-monitor.service            # systemd unit for Python collector
-── dga_aggregate.py               # Cron script for 15-min aggregation
-├── dga_monitor.py                 # Main Python collector
+├── dga_aggregate.py               # Cron script for 15-min aggregation
+── dga_monitor.py                 # Main Python collector
+├── tests/
+│   ├── sit.sh                     # System Integration Test
+│   └── health_monitor.sh          # Health monitoring cron
+├── docs/
+│   ├── CI-CD-ARCHITECTURE.md      # CI/CD architecture docs
+│   └── TESTING_REPORT.md          # Original test documentation
 ├── dga-nextjs/
-│   ├── README.md                  # This file
+│   ├── README.md                  # Next.js app docs
+│   ├── next.config.js             # Next.js config (basePath: '/dga')
+│   ├── ecosystem.config.js        # PM2 configuration
+│   ├── dga-screenshot.js          # Playwright screenshot script
+│   ├── lib/
+│   │   ├── db.ts                  # Database pool
+│   │   ├── timezone.ts            # Timezone conversion
+│   │   ├── gapFill.ts             # Gap filling logic
+│   │   ├── readingsNow.ts         # Latest readings query
+│   │   └── statistics.ts          # Statistics query
+│   ├── __tests__/lib/
+│   │   ├── timezone.test.ts       # 10 tests
+│   │   ├── gapFill.test.ts        # 9 tests
+│   │   ├── readingsNow.test.ts    # 8 tests
+│   │   └── statistics.test.ts     # 7 tests
 │   ├── app/
 │   │   ├── api/
 │   │   │   ├── auth/              # Login/logout endpoints
@@ -218,20 +308,17 @@ calisto-transformer/
 │   │   │   ├── readings/          # Historical + now
 │   │   │   │   └── now/route.ts   # Latest per device
 │   │   │   └── statistics/        # Aggregate stats
-│   │   ├── login/                 # Login page
+│   │   ├── login/                 # Login page (with password toggle)
 │   │   └── page.tsx               # Main dashboard
-│   ├── components/
-│   │   ├── Chart.tsx              # Chart.js wrapper
-│   │   ├── DataTable.tsx          # Static table (unused)
-│   │   ├── DeviceFilter.tsx       # Multi-select device dropdown
-│   │   ├── RealtimeTable.tsx      # Live-updating table
-│   │   ├── StatsPanel.tsx         # Statistics display
-│   │   └── TimeRangeFilter.tsx    # Time range buttons
-│   ├── ecosystem.config.js        # PM2 configuration
-│   └── dga-screenshot.js          # Playwright screenshot script
-── docs/
-    └── TESTING_REPORT.md          # Original test documentation
+│   ── components/
+│       ├── Chart.tsx              # Chart.js wrapper
+│       ├── DataTable.tsx          # Static table (unused)
+│       ├── DeviceFilter.tsx       # Multi-select device dropdown
+│       ├── RealtimeTable.tsx      # Live-updating table
+│       ├── StatsPanel.tsx         # Statistics display
+│       └── TimeRangeFilter.tsx    # Time range buttons
 ```
 
 ## References
 - [Testing Report](docs/TESTING_REPORT.md) — Modbus register map verification, DGA standards
+- [CI/CD Architecture](docs/CI-CD-ARCHITECTURE.md) — CI/CD pipeline documentation

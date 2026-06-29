@@ -21,6 +21,30 @@ const Chart = dynamic(() => import('@/components/Chart'), {
   ),
 });
 
+const AnomalyAlert = dynamic(() => import('@/components/AnomalyAlert'), {
+  ssr: false,
+  loading: () => (
+    <div className="bg-slate-800 rounded-lg p-4 m-4">
+      <div className="flex items-center gap-2 text-slate-400">
+        <div className="w-5 h-5 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
+        <span className="text-sm">Checking anomalies...</span>
+      </div>
+    </div>
+  ),
+});
+
+const AnomalyDashboard = dynamic(() => import('@/components/AnomalyDashboard'), {
+  ssr: false,
+  loading: () => (
+    <div className="p-6">
+      <div className="flex items-center gap-3 text-slate-400">
+        <div className="w-6 h-6 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
+        <span>Loading devices...</span>
+      </div>
+    </div>
+  ),
+});
+
 interface Device {
   name: string;
   ip: string;
@@ -382,6 +406,8 @@ export default function Dashboard() {
           statistics={statistics}
           thresholds={THRESHOLDS}
         />
+
+        <AnomalyDashboard />
       </main>
     </div>
   );
