@@ -223,6 +223,137 @@ tail -f /tmp/build.log
 - ต้อง copy manually ตอน setup ครั้งแรก
 - **TODO**: Rotate credentials ที่เคย commit ใน git history
 
+## Testing Strategy
+
+DGA Monitor มีระบบทดสอบ 3 ชั้น (Unit → SIT → CI/CD) ที่ทำงานร่วมกันเพื่อให้มั่นใจว่าการเปลี่ยนแปลงจะไม่ทำให้ระบบ production พัง
+
+### Test Pyramid
+
+```
+         ┌─────────┐
+         │   E2E   │  (Playwright) ← ยังไม่มี
+        ┌┴─────────┐
+        │    SIT    │  (13 tests) ← ✅ มีแล้ว
+       ┌┴───────────┴┐
+       │ Unit Tests  │  (53 tests) ← ✅ มีแล้ว
+       └─────────────┘
+```
+
+### Unit Tests
+
+รันด้วย **Vitest** (fast, ~100ms) ทุกครั้งที่ `npm test`
+
+| Test Suite | Tests | Coverage | File |
+|------------|-------|----------|------|
+| `timezone.test.ts` | 10 | UTC ↔ Bangkok conversion, 15-min rounding | `__tests__/lib/timezone.test.ts` |
+| `gapFill.test.ts` | 9 | 15-min slot filling, null handling | `__tests__/lib/gapFill.test.ts` |
+| `readingsNow.test.ts` | 8 | DISTINCT ON query + response format | `__tests__/lib/readingsNow.test.ts` |
+| `statistics.test.ts` | 7 | Aggregate functions + parameter binding | `__tests__/lib/statistics.test.ts` |
+| `dga-api.test.ts` | 19 | Anomaly API client (mocked fetch) | `__tests__/lib/dga-api.test.ts` |
+| **Total** | **53** | **+55% coverage** | |
+
+**Run:**
+```bash
+cd dga-nextjs
+npm test                    # all unit tests
+npm test -- dga-api.test.ts # specific file
+```
+
+### SIT (System Integration Tests)
+
+2 scripts ที่รัน real HTTP calls ต่อ production environment:
+
+**`tests/sit.sh` (Dashboard — 5 tests)**
+
+| # | Test | Status |
+|---|------|--------|
+| 1 | Login authentication | ✅ |
+| 2 | GET /api/devices | ✅ |
+| 3 | GET /api/readings/now | ✅ |
+| 4 | GET /dga (frontend) | ✅ |
+| 5 | Data integrity check | ✅ |
+
+**`tests/sit-anomaly.sh` (Anomaly API — 8 tests)**
+
+| # | Test | Status |
+|---|------|--------|
+| 1 | Health endpoint (21 devices) | ✅ |
+| 2 | Devices endpoint | ✅ |
+| 3 | Anomaly detection | ✅ |
+| 4 | Anomaly (invalid device → 404) | ✅ |
+| 5 | Drift detection | ✅ |
+| 6 | Trend detection | ✅ |
+| 7 | Swagger UI accessible | ✅ |
+| 8 | OpenAPI JSON accessible | ✅ |
+
+**Run:**
+```bash
+# Dashboard SIT
+bash tests/sit.sh
+
+# Anomaly API SIT only
+bash tests/sit-anomaly.sh
+```
+
+### CI/CD Pipeline
+
+มีทั้งหมด 4 จุดที่ runs tests อัตโนมัติ:
+
+| Trigger | ทำอะไร | ผลลัพธ์ |
+|---------|--------|---------|
+| `git push` | GitHub Actions: lint + type + build + **53 unit tests** | PR status ✅/❌ |
+| `git pull` (ThinkStation) | Post-merge hook: build + deploy + **SIT 13 tests** + screenshot + Telegram | Deploy or fail |
+| Cron `*/5 * * * *` | Health monitor: HTTP + PM2 + API checks | Telegram alert if down |
+| Manual | `npm test` + `bash tests/sit.sh` | Local verification |
+
+รวมทั้งหมด:
+- **Unit tests:** 53 tests (ทุก push + ทุก pull)
+- **SIT tests:** 13 tests (ทุก pull)
+- **Health checks:** ทุก 5 นาที (ต่อเนื่อง)
+
+### Test Data Strategy
+
+| Test Type | ข้อมูล | หมายเหตุ |
+|-----------|--------|---------|
+| Unit | Mock data (TS interfaces) | ไม่ต้องต่อ DB/server |
+| Unit (dga-api) | Mock `fetch` API | Simulate network conditions |
+| SIT | Live data จาก `dga_readings_15min` | ใช้ device `DA115` เป็น test target |
+| SIT | Live API responses | Verify response structure |
+
+### Adding New Tests
+
+**Unit test (เพิ่มไฟล์ใหม่ใน `__tests__/lib/`):**
+```typescript
+import { describe, it, expect } from 'vitest';
+import { myFunction } from '../../lib/myModule';
+
+describe('myModule', () => {
+  it('should do X', () => {
+    expect(myFunction(input)).toBe(expected);
+  });
+});
+```
+
+**SIT test (เพิ่มใน `tests/sit.sh`):**
+```bash
+RESP=$(curl -sf http://localhost:3001/dga/api/my-endpoint)
+if echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d['success']" 2>/dev/null; then
+  success "GET /api/my-endpoint"
+else
+  fail "GET /api/my-endpoint"
+fi
+```
+
+### Coverage Goals
+
+| Category | Current | Target |
+|----------|---------|--------|
+| Unit tests | 53 tests / 5 files | 70+ tests |
+| SIT tests | 13 tests / 2 scripts | 20+ tests |
+| Critical paths | 100% | 100% |
+| lib/ functions | 80%+ | 90%+ |
+| E2E tests | 0 | 3+ user flows |
+
 ## Future Improvements
 
 ### 1. Environment-based Config
@@ -290,3 +421,44 @@ jobs:
 - [Playwright Screenshot](https://playwright.dev/docs/api/class-page#page-screenshot)
 - [Telegram Bot API](https://core.telegram.org/bots/api#sendphoto)
 - [litellm-proxy CI/CD](https://github.com/pbseiya/litellm-proxy/blob/main/.github/workflows/deploy.yml) — สำหรับเปรียบเทียบ
+
+## Adding New Tests
+
+### Unit test (เพิ่มไฟล์ใหม่ใน `__tests__/lib/`):
+```typescript
+import { describe, it, expect } from 'vitest';
+import { myFunction } from '../../lib/myModule';
+
+describe('myModule', () => {
+  it('should do X', () => {
+    expect(myFunction(input)).toBe(expected);
+  });
+});
+```
+
+### SIT test (เพิ่มใน `tests/sit.sh`):
+```bash
+RESP=$(curl -sf http://localhost:3001/dga/api/my-endpoint)
+if echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d['success']" 2>/dev/null; then
+  success "GET /api/my-endpoint"
+else
+  fail "GET /api/my-endpoint"
+fi
+```
+
+## Coverage Goals
+
+| Category | Current | Target |
+|----------|---------|--------|
+| Unit tests | 53 tests / 5 files | 70+ tests |
+| SIT tests | 13 tests / 2 scripts | 20+ tests |
+| Critical paths | 100% | 100% |
+| E2E tests | 0 | 3+ user flows |
+
+## References
+
+- [Vitest Documentation](https://vitest.dev/)
+- [Playwright Documentation](https://playwright.dev/)
+- [PM2 Process Management](https://pm2.keymetrics.io/docs/usage/process-management/)
+- [Nginx Reverse Proxy](https://nginx.org/en/docs/http/ngx_http_proxy_module.html)
+
