@@ -77,7 +77,7 @@ export default function AnomalyGaugeTimeline() {
         const params = new URLSearchParams(window.location.search);
         const device = params.get('device') || 'DA115';
         
-        const response = await fetch(`/dga/api/anomaly/history?device=${device}&hours=24`);
+        const response = await fetch(`/dga-api/anomaly/history?device=${device}&hours=24`);
         if (!response.ok) throw new Error('Failed to load data');
         
         const result = await response.json();
