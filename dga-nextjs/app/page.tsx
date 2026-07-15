@@ -419,7 +419,7 @@ export default function Dashboard() {
           thresholds={THRESHOLDS}
         />
 
-        <AnomalyGaugeTimeline />
+        <AnomalyGaugeTimeline selectedDevices={selectedDevices} />
 
         <AnomalyDashboard />
       </main>

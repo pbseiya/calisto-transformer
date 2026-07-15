@@ -1,182 +1,349 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 
-interface AnomalyHistory {
+interface DeviceZScore {
   device: string;
   current: { h2_zscore: number; co_zscore: number; wc_zscore: number };
   history: { timestamps: string[]; h2_zscores: number[]; co_zscores: number[]; wc_zscores: number[] };
   threshold: number;
 }
 
-interface TooltipState { x: number; y: number; timestamp: string; h2: number; co: number; wc: number }
-interface GaugeProps { title: string; value: number; threshold: number }
+interface TooltipState { x: number; y: number; timestamp: string; device: string; h2: number; co: number; wc: number }
+interface GaugeProps { device: string; title: string; value: number; threshold: number }
 
-function Gauge({ title, value, threshold }: GaugeProps) {
-  const getColor = () => value >= threshold ? '#e94560' : value >= threshold * 0.7 ? '#ffd93d' : '#4ecca3';
+function Gauge({ device, title, value, threshold }: GaugeProps) {
+  const getColor = () => value >= threshold ? '#ef4444' : value >= threshold * 0.7 ? '#f59e0b' : '#10b981';
   const getColorText = () => value >= threshold ? 'status-danger' : value >= threshold * 0.7 ? 'status-warning' : 'status-normal';
+  const arcLength = Math.max(12, Math.min(100, (value / threshold) * 50));
+  
   return (
     <div className="gauge-card">
-      <h3>{title}</h3>
-      <div className="gauge">
-        <svg width="180" height="100">
-          <path d="M 10 90 A 80 80 0 0 1 170 90" fill="none" stroke="#2a3f5f" strokeWidth="15" />
-          <path d="M 10 90 A 80 80 0 0 1 170 90" fill="none" stroke={getColor()} strokeWidth="15"
-            strokeDasharray={`${Math.max(8, Math.min(100, value / threshold * 50))} 250`} strokeLinecap="round"
-            style={{ filter: `drop-shadow(0 0 6px ${getColor()}50)` }} />
-        </svg>
-        <div className={`gauge-value ${getColorText()}`}>{value.toFixed(1)}</div>
+      <div className="gauge-header">
+        <span className="gauge-device">{device}</span>
+        <span className="gauge-title">{title}</span>
       </div>
-      <div className="gauge-label">Z-Score (Threshold: {threshold.toFixed(1)})</div>
+      <div className="gauge">
+        <svg width="160" height="90" viewBox="0 0 160 90">
+          <defs>
+            <filter id={`glow-${device}-${title}`}>
+              <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+              <feMerge>
+                <feMergeNode in="coloredBlur"/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
+            </filter>
+          </defs>
+          <path d="M 10 80 A 70 70 0 0 1 150 80" fill="none" stroke="#1e293b" strokeWidth="12" strokeLinecap="round"/>
+          <path d="M 10 80 A 70 70 0 0 1 150 80" fill="none" stroke={getColor()} strokeWidth="12"
+            strokeDasharray={`${arcLength} 220`} strokeLinecap="round"
+            filter={`url(#glow-${device}-${title})`}
+            style={{ transition: 'stroke-dasharray 0.5s ease' }} />
+        </svg>
+        <div className={`gauge-value ${getColorText()}`}>{value.toFixed(2)}</div>
+      </div>
+      <div className="gauge-footer">
+        <span className="gauge-label">Z-Score</span>
+        <span className="gauge-threshold">Limit: ±{threshold.toFixed(1)}σ</span>
+      </div>
     </div>
   );
 }
 
-export default function AnomalyGaugeTimeline({ deviceName }: { deviceName?: string }) {
-  const [data, setData] = useState<AnomalyHistory | null>(null);
+export default function AnomalyGaugeTimeline({ selectedDevices }: { selectedDevices?: string[] }) {
+  const [devicesData, setDevicesData] = useState<DeviceZScore[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [zoomStart, setZoomStart] = useState(0);
+  const [activeDevice, setActiveDevice] = useState<string>('');
+  const [panOffset, setPanOffset] = useState(0);
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState(0);
+  const chartRef = useRef<HTMLDivElement>(null);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
 
-  useEffect(() => { async function load() { try { const p = new URLSearchParams(window.location.search); const dev = p.get('device') || 'DA115'; const r = await fetch(`/dga-api/anomaly/history?device=${dev}&hours=24`); if (!r.ok) throw new Error('Failed'); setData(await r.json()); } catch(e) { setError(e instanceof Error ? e.message : String(e)); } finally { setLoading(false); } } load(); }, []);
+  useEffect(() => {
+    async function load() {
+      try {
+        const p = new URLSearchParams(window.location.search);
+        const devices = selectedDevices || [p.get('device') || 'DA115'];
+        
+        const results = await Promise.all(
+          devices.map(async (dev) => {
+            const r = await fetch(`/dga-api/anomaly/history?device=${dev}&hours=24`);
+            if (!r.ok) throw new Error(`Failed for ${dev}`);
+            return await r.json();
+          })
+        );
+        
+        setDevicesData(results);
+        setActiveDevice(results[0]?.device || '');
+      } catch(e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, [selectedDevices]);
 
-  const getSliceData = () => {
-    if (!data) return { t:[], h:[], c:[], w:[] };
-    const total = data.history.timestamps.length;
-    // Zoom: show last N hours based on zoomStart position
-    const visibleHrs = Math.max(6, total - zoomStart);
-    const startIdx = Math.max(0, total - visibleHrs);
-    return {
-      t: data.history.timestamps.slice(startIdx),
-      h: data.history.h2_zscores.slice(startIdx),
-      c: data.history.co_zscores.slice(startIdx),
-      w: data.history.wc_zscores.slice(startIdx),
-    };
-  };
+  const activeData = devicesData.find(d => d.device === activeDevice);
+  
+  // Pan handlers
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    setIsPanning(true);
+    setPanStart(e.clientX);
+  }, []);
 
-  const handleMouse = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isPanning || !activeData) return;
+    const delta = e.clientX - panStart;
+    setPanOffset(prev => Math.max(-100, Math.min(100, prev + delta * 0.5)));
+    setPanStart(e.clientX);
+    
+    // Update tooltip
     const rect = e.currentTarget.getBoundingClientRect();
     const svgR = e.currentTarget.querySelector('.chart-svg')?.getBoundingClientRect();
-    if(!svgR||!data) return;
-    const ratio = Math.max(0, Math.min(1, (e.clientX - svgR.left)/svgR.width));
-    const i = Math.round(ratio*(data.history.timestamps.length-1));
-    setTooltip({ x:e.clientX-rect.left, y:e.clientY-rect.top, timestamp:data.history.timestamps[i], h2:data.history.h2_zscores[i], co:data.history.co_zscores[i], wc:data.history.wc_zscores[i] });
-  };
+    if (svgR) {
+      const ratio = Math.max(0, Math.min(1, (e.clientX - svgR.left) / svgR.width));
+      const i = Math.round(ratio * (activeData.history.timestamps.length - 1));
+      setTooltip({
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+        timestamp: activeData.history.timestamps[i],
+        device: activeDevice,
+        h2: activeData.history.h2_zscores[i],
+        co: activeData.history.co_zscores[i],
+        wc: activeData.history.wc_zscores[i],
+      });
+    }
+  }, [isPanning, panStart, activeData, activeDevice]);
 
-  // Y-axis tick marks for ±6σ range centered at 0
+  const handleMouseUp = useCallback(() => {
+    setIsPanning(false);
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    setIsPanning(false);
+    setTooltip(null);
+  }, []);
+
+  // Y-axis mapping: -6σ to +6σ
+  const zScoreToY = (z: number) => 230 - ((z + 6) / 12) * 230;
   const yAxisTicks = [-6, -4, -2, 0, 2, 4, 6];
-  const zScoreToY = (z: number) => 230 - ((z + 6) / 12) * 230; // map -6σ..+6σ → 230px..0px
 
-  if (loading) return <div className="p-6"><div className="flex items-center gap-3 text-slate-400"><svg className="animate-spin h-6 w-6" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg><span>Loading anomaly dashboard...</span></div></div>;
-  if (error) return <div className="p-6"><div className="text-red-400">Error: {error}</div></div>;
-  if (!data) return null;
-
-  const s = getSliceData();
-  const displayDevice = deviceName || data.device || 'Unknown';
+  if (loading) return <div className="loading-container"><div className="spinner"/><span>Loading anomaly data...</span></div>;
+  if (error) return <div className="error-container">Error: {error}</div>;
+  if (devicesData.length === 0) return null;
 
   return (
     <div className="anomaly-dashboard">
-      {/* Device info header */}
+      {/* Header */}
       <div className="dashboard-header">
         <div className="header-left">
-          <h2>Z-Score Anomaly Monitor</h2>
-          <span className="device-badge">{displayDevice}</span>
-        </div>
-        <div className="header-stats">
-          <span>H2: <strong className={s.h[s.h.length-1] >= data.threshold ? 'danger' : s.h[s.h.length-1] >= data.threshold*0.7 ? 'warning' : 'normal'}>{s.h[s.h.length-1]?.toFixed(2) ?? 0}</strong></span>
-          <span>CO: <strong className={s.c[s.c.length-1] >= data.threshold ? 'danger' : s.c[s.c.length-1] >= data.threshold*0.7 ? 'warning' : 'normal'}>{s.c[s.c.length-1]?.toFixed(2) ?? 0}</strong></span>
-          <span>WC: <strong className={s.w[s.w.length-1] >= data.threshold ? 'danger' : s.w[s.w.length-1] >= data.threshold*0.7 ? 'warning' : 'normal'}>{s.w[s.w.length-1]?.toFixed(2) ?? 0}</strong></span>
-        </div>
-      </div>
-
-      <div className="gauge-section">
-        <Gauge title={`${displayDevice} · H₂`} value={data.current.h2_zscore} threshold={data.threshold} />
-        <Gauge title={`${displayDevice} · CO`} value={data.current.co_zscore} threshold={data.threshold} />
-        <Gauge title={`${displayDevice} · WC`} value={data.current.wc_zscore} threshold={data.threshold} />
-      </div>
-
-      <div className="timeline-section">
-        <div className="timeline-header">
-          <div className="timeline-title">Z-Score Timeline (σ)</div>
-          <div className="timeline-controls">
-            <button onClick={() => setZoomStart(Math.min(zoomStart + 4, data.history.timestamps.length - 6))}>← Zoom In</button>
-            <span style={{ opacity: 0.7 }}>Window: {s.t.length}h of {data.history.timestamps.length}h</span>
-            <button onClick={() => setZoomStart(0)}>Full View</button>
-          </div>
-          <div className="timeline-legend">
-            <div className="legend-item"><div className="legend-color" style={{ background:'#e94560' }}></div><span>H₂</span></div>
-            <div className="legend-item"><div className="legend-color" style={{ background:'#ffd93d' }}></div><span>CO</span></div>
-            <div className="legend-item"><div className="legend-color" style={{ background:'#4ecca3' }}></div><span>WC</span></div>
-          </div>
-        </div>
-
-        {/* Chart wrapper with Y-axis labels */}
-        <div className="chart-wrapper">
-          {/* Y-axis tick labels */}
-          <div className="y-axis-labels">
-            {yAxisTicks.map(tick => (
-              <div key={tick} className="y-tick" style={{ top: `${((6 - tick) / 12) * 100}%` }}>
-                {tick === 0 ? <strong>0</strong> : `${tick}σ`}
-              </div>
+          <h2 className="header-title">Z-Score Anomaly Monitor</h2>
+          <div className="device-selector">
+            {devicesData.map(d => (
+              <button
+                key={d.device}
+                className={`device-btn ${d.device === activeDevice ? 'active' : ''}`}
+                onClick={() => setActiveDevice(d.device)}
+              >
+                {d.device}
+              </button>
             ))}
           </div>
-
-          <div className="timeline-chart" onMouseMove={handleMouse} onMouseLeave={() => setTooltip(null)}>
-            {tooltip && (<div className="tooltip" style={{ left: tooltip.x, top: tooltip.y - 70 }}><div className="tooltip-time">{new Date(tooltip.timestamp).toLocaleString()}</div><div className="tooltip-row">• H₂: {tooltip.h2.toFixed(2)}σ</div><div className="tooltip-row">• CO: {tooltip.co.toFixed(2)}σ</div><div className="tooltip-row">• WC: {tooltip.wc.toFixed(2)}σ</div></div>)}
-
-            {/* Threshold grid lines at correct Y positions */}
-            <div className="threshold-grid-line" style={{ bottom: `${((6-3)/12)*100}%`, borderColor:'#e94560' }}></div>
-            <div className="zero-line" style={{ bottom: '50%', borderColor:'#4ecca3' }}></div>
-
-            <svg className="chart-svg" width="100%" height="100%" viewBox="0 0 1000 230" preserveAspectRatio="none">
-              <path d={s.h.map((z,i,a)=>`${i===0?'M':'L'} ${(i/(a.length-1||1))*1000} ${zScoreToY(z)}`).join(' ')} stroke="#e94560" strokeWidth="3" fill="none"/>
-              <path d={s.c.map((z,i,a)=>`${i===0?'M':'L'} ${(i/(a.length-1||1))*1000} ${zScoreToY(z)}`).join(' ')} stroke="#ffd93d" strokeWidth="3" fill="none"/>
-              <path d={s.w.map((z,i,a)=>`${i===0?'M':'L'} ${(i/(a.length-1||1))*1000} ${zScoreToY(z)}`).join(' ')} stroke="#4ecca3" strokeWidth="3" fill="none"/>
-            </svg>
-          </div>
-
-          {/* X-axis time labels */}
-          <div className="timeline-labels">{s.t.filter((_,i)=>i%Math.ceil(s.t.length/6)===0).map((ts,i)=><span key={i}>{new Date(ts).toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', hour12:false })}</span>)}</div>
+        </div>
+        <div className="header-stats">
+          {activeData && (
+            <>
+              <span className="stat-item">H₂: <strong className={activeData.current.h2_zscore >= activeData.threshold ? 'danger' : activeData.current.h2_zscore >= activeData.threshold*0.7 ? 'warning' : 'normal'}>{activeData.current.h2_zscore.toFixed(2)}σ</strong></span>
+              <span className="stat-item">CO: <strong className={activeData.current.co_zscore >= activeData.threshold ? 'danger' : activeData.current.co_zscore >= activeData.threshold*0.7 ? 'warning' : 'normal'}>{activeData.current.co_zscore.toFixed(2)}σ</strong></span>
+              <span className="stat-item">WC: <strong className={activeData.current.wc_zscore >= activeData.threshold ? 'danger' : activeData.current.wc_zscore >= activeData.threshold*0.7 ? 'warning' : 'normal'}>{activeData.current.wc_zscore.toFixed(2)}σ</strong></span>
+            </>
+          )}
         </div>
       </div>
 
+      {/* Gauges */}
+      <div className="gauge-section">
+        {activeData && devicesData.map(d => (
+          d.device === activeDevice && (
+            <div key={d.device} className="gauge-row">
+              <Gauge device={d.device} title="H₂" value={d.current.h2_zscore} threshold={d.threshold} />
+              <Gauge device={d.device} title="CO" value={d.current.co_zscore} threshold={d.threshold} />
+              <Gauge device={d.device} title="WC" value={d.current.wc_zscore} threshold={d.threshold} />
+            </div>
+          )
+        ))}
+      </div>
+
+      {/* Timeline */}
+      {activeData && (
+        <div className="timeline-section">
+          <div className="timeline-header">
+            <div className="timeline-title">
+              <span className="timeline-label">Z-Score Timeline</span>
+              <span className="timeline-subtitle">24h History · {activeDevice}</span>
+            </div>
+            <div className="timeline-legend">
+              <div className="legend-item"><div className="legend-color h2"/><span>H₂</span></div>
+              <div className="legend-item"><div className="legend-color co"/><span>CO</span></div>
+              <div className="legend-item"><div className="legend-color wc"/><span>WC</span></div>
+              <div className="legend-divider"/>
+              <div className="legend-item"><div className="legend-line ucl"/><span>UCL +3σ</span></div>
+              <div className="legend-item"><div className="legend-line lcl"/><span>LCL -3σ</span></div>
+            </div>
+          </div>
+
+          <div className="chart-container">
+            {/* Y-axis */}
+            <div className="y-axis">
+              {yAxisTicks.map(tick => (
+                <div key={tick} className="y-tick" style={{ top: `${zScoreToY(tick) / 230 * 100}%` }}>
+                  <span className={`y-tick-label ${tick === 0 ? 'zero' : ''}`}>
+                    {tick === 0 ? '0' : `${tick > 0 ? '+' : ''}${tick}σ`}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* Chart area */}
+            <div
+              ref={chartRef}
+              className={`timeline-chart ${isPanning ? 'panning' : ''}`}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseLeave}
+            >
+              {/* Control limit lines */}
+              <div className="control-line ucl" style={{ top: `${zScoreToY(3) / 230 * 100}%` }}>
+                <span className="control-label">UCL +3σ</span>
+              </div>
+              <div className="control-line center" style={{ top: `${zScoreToY(0) / 230 * 100}%` }}>
+                <span className="control-label">Center 0σ</span>
+              </div>
+              <div className="control-line lcl" style={{ top: `${zScoreToY(-3) / 230 * 100}%` }}>
+                <span className="control-label">LCL -3σ</span>
+              </div>
+
+              {/* Tooltip */}
+              {tooltip && (
+                <div className="tooltip" style={{ left: tooltip.x, top: tooltip.y - 80 }}>
+                  <div className="tooltip-header">{tooltip.device} · {new Date(tooltip.timestamp).toLocaleTimeString()}</div>
+                  <div className="tooltip-row h2">H₂: {tooltip.h2.toFixed(2)}σ</div>
+                  <div className="tooltip-row co">CO: {tooltip.co.toFixed(2)}σ</div>
+                  <div className="tooltip-row wc">WC: {tooltip.wc.toFixed(2)}σ</div>
+                </div>
+              )}
+
+              {/* SVG Chart */}
+              <svg className="chart-svg" width="100%" height="100%" viewBox="0 0 1000 230" preserveAspectRatio="none">
+                {/* Grid lines */}
+                {yAxisTicks.filter(t => t !== 0).map(tick => (
+                  <line key={tick} x1="0" y1={zScoreToY(tick)} x2="1000" y2={zScoreToY(tick)} stroke="#1e293b" strokeWidth="1" strokeDasharray="4 4"/>
+                ))}
+                
+                {/* Data lines */}
+                <path d={activeData.history.h2_zscores.map((z,i,a)=>`${i===0?'M':'L'} ${(i/(a.length-1||1))*1000} ${zScoreToY(z)}`).join(' ')} stroke="#ef4444" strokeWidth="2.5" fill="none" strokeLinejoin="round"/>
+                <path d={activeData.history.co_zscores.map((z,i,a)=>`${i===0?'M':'L'} ${(i/(a.length-1||1))*1000} ${zScoreToY(z)}`).join(' ')} stroke="#f59e0b" strokeWidth="2.5" fill="none" strokeLinejoin="round"/>
+                <path d={activeData.history.wc_zscores.map((z,i,a)=>`${i===0?'M':'L'} ${(i/(a.length-1||1))*1000} ${zScoreToY(z)}`).join(' ')} stroke="#10b981" strokeWidth="2.5" fill="none" strokeLinejoin="round"/>
+              </svg>
+            </div>
+
+            {/* X-axis */}
+            <div className="x-axis">
+              {activeData.history.timestamps.filter((_,i) => i % Math.ceil(activeData.history.timestamps.length / 8) === 0).map((ts,i) => (
+                <span key={i} className="x-tick">{new Date(ts).toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', hour12:false })}</span>
+              ))}
+            </div>
+          </div>
+
+          {/* Pan hint */}
+          <div className="pan-hint">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0l-4 4h3v4H3V5L0 8l3 3V8h4v4H4l4 4 4-4h-3V8h4v3l3-3-3-3v3h-4V4h3z"/></svg>
+            <span>Drag to pan · Hover for details</span>
+          </div>
+        </div>
+      )}
+
       <style jsx>{`
-        .anomaly-dashboard{padding:20px;background:#0f1419;color:white;font-family:'Segoe UI',sans-serif}
-        .dashboard-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;padding:16px 20px;background:#1a2332;border-radius:12px;border:2px solid #2a3f5f}
-        .header-left{display:flex;align-items:center;gap:12px}
-        .header-left h2{margin:0;font-size:20px}
-        .device-badge{background:#e94560;color:#fff;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:700}
-        .header-stats{display:flex;gap:16px;font-size:14px}
-        .header-stats span strong.normal{color:#4ecca3}
-        .header-stats span strong.warning{color:#ffd93d}
-        .header-stats span strong.danger{color:#e94560}
-        .gauge-section{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-bottom:30px}
-        .gauge-card{background:#1a2332;border-radius:12px;padding:20px;text-align:center;border:2px solid #2a3f5f}
-        .gauge-card h3{margin:0 0 15px;font-size:18px;font-weight:700;color:#fff;letter-spacing:.5px}
-        .gauge{width:180px;height:100px;margin:0 auto;position:relative}
-        .gauge-value{position:absolute;bottom:0;left:50%;transform:translateX(-50%);font-size:32px;font-weight:bold}
-        .gauge-label{margin-top:10px;font-size:13px;color:#aaa}
-        .status-normal{color:#4ecca3}.status-warning{color:#ffd93d}.status-danger{color:#e94560}
-        .timeline-section{background:#1a2332;border-radius:12px;padding:20px;border:2px solid #2a3f5f}
-        .timeline-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;flex-wrap:wrap;gap:10px}
-        .timeline-title{font-size:18px;font-weight:bold}
-        .timeline-controls{display:flex;align-items:center;gap:12px}
-        .timeline-controls button{background:#2a3f5f;border:none;color:#fff;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px}
-        .timeline-controls button:hover{background:#3b557a}
-        .timeline-legend{display:flex;gap:15px;font-size:12px}
-        .legend-item{display:flex;align-items:center;gap:5px}
-        .legend-color{width:20px;height:3px}
-        /* NEW: Chart wrapper with Y-axis */
-        .chart-wrapper{position:relative;padding-left:45px}
-        .y-axis-labels{position:absolute;left:0;top:0;bottom:30px;width:42px}
-        .y-tick{position:absolute;right:8px;font-size:11px;color:#888;transform:translateY(-50%)}
-        .y-tick strong{color:#ccc;font-size:12px}
-        .timeline-chart{height:250px;position:relative;background:#0f1419;border-radius:8px;padding:10px;cursor:crosshair;border:1px solid #2a3f5f}
-        .tooltip{position:absolute;background:rgba(15,20,25,.97);border:1px solid #2a3f5f;border-radius:8px;padding:10px 14px;font-size:13px;z-index:50;pointer-events:none;min-width:170px;box-shadow:0 4px 14px rgba(0,0,0,.6)}
-        .tooltip-time{font-weight:bold;margin-bottom:4px;color:#ddd}
-        .tooltip-row{color:#eee}
-        .threshold-grid-line{position:absolute;left:0;right:0;border-top:2px dashed;pointer-events:none}
-        .zero-line{position:absolute;left:0;right:0;border-top:2px dashed;pointer-events:none}
-        .timeline-labels{display:flex;justify-content:space-between;margin-top:8px;font-size:11px;color:#666}
+        .anomaly-dashboard { padding: 24px; background: #0f172a; color: #e2e8f0; font-family: 'Inter', -apple-system, sans-serif; }
+        
+        /* Header */
+        .dashboard-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding: 20px 24px; background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border-radius: 12px; border: 1px solid #334155; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3); }
+        .header-left { display: flex; align-items: center; gap: 20px; }
+        .header-title { margin: 0; font-size: 22px; font-weight: 700; color: #f8fafc; letter-spacing: -0.5px; }
+        .device-selector { display: flex; gap: 8px; }
+        .device-btn { background: #334155; border: 1px solid #475569; color: #cbd5e1; padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .device-btn:hover { background: #475569; color: #f8fafc; }
+        .device-btn.active { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+        .header-stats { display: flex; gap: 20px; }
+        .stat-item { font-size: 14px; color: #94a3b8; }
+        .stat-item strong { font-weight: 700; }
+        .stat-item strong.normal { color: #10b981; }
+        .stat-item strong.warning { color: #f59e0b; }
+        .stat-item strong.danger { color: #ef4444; }
+        
+        /* Gauges */
+        .gauge-section { margin-bottom: 28px; }
+        .gauge-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+        .gauge-card { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: transform 0.2s; }
+        .gauge-card:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.3); }
+        .gauge-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        .gauge-device { font-size: 12px; font-weight: 700; color: #3b82f6; text-transform: uppercase; letter-spacing: 0.5px; }
+        .gauge-title { font-size: 16px; font-weight: 700; color: #f8fafc; }
+        .gauge { width: 160px; height: 90px; margin: 0 auto; position: relative; }
+        .gauge-value { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); font-size: 28px; font-weight: 800; font-variant-numeric: tabular-nums; }
+        .gauge-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding-top: 12px; border-top: 1px solid #334155; }
+        .gauge-label { font-size: 12px; color: #64748b; font-weight: 600; }
+        .gauge-threshold { font-size: 11px; color: #64748b; }
+        .status-normal { color: #10b981; }
+        .status-warning { color: #f59e0b; }
+        .status-danger { color: #ef4444; }
+        
+        /* Timeline */
+        .timeline-section { background: #1e293b; border-radius: 12px; padding: 24px; border: 1px solid #334155; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3); }
+        .timeline-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .timeline-title { display: flex; flex-direction: column; gap: 4px; }
+        .timeline-label { font-size: 18px; font-weight: 700; color: #f8fafc; }
+        .timeline-subtitle { font-size: 13px; color: #64748b; }
+        .timeline-legend { display: flex; align-items: center; gap: 16px; font-size: 12px; }
+        .legend-item { display: flex; align-items: center; gap: 6px; color: #cbd5e1; }
+        .legend-color { width: 20px; height: 3px; border-radius: 2px; }
+        .legend-color.h2 { background: #ef4444; }
+        .legend-color.co { background: #f59e0b; }
+        .legend-color.wc { background: #10b981; }
+        .legend-divider { width: 1px; height: 16px; background: #475569; }
+        .legend-line { width: 20px; height: 2px; }
+        .legend-line.ucl { background: #ef4444; border-top: 2px dashed #ef4444; }
+        .legend-line.lcl { background: #ef4444; border-top: 2px dashed #ef4444; }
+        
+        /* Chart */
+        .chart-container { position: relative; display: flex; gap: 12px; }
+        .y-axis { position: relative; width: 48px; flex-shrink: 0; }
+        .y-tick { position: absolute; right: 0; width: 100%; transform: translateY(-50%); }
+        .y-tick-label { font-size: 11px; color: #64748b; font-weight: 600; font-variant-numeric: tabular-nums; }
+        .y-tick-label.zero { color: #10b981; font-weight: 700; }
+        .timeline-chart { flex: 1; height: 280px; position: relative; background: #0f172a; border-radius: 8px; border: 1px solid #334155; cursor: grab; overflow: hidden; }
+        .timeline-chart.panning { cursor: grabbing; }
+        .control-line { position: absolute; left: 0; right: 0; pointer-events: none; }
+        .control-line.ucl { border-top: 2px dashed #ef4444; }
+        .control-line.center { border-top: 2px solid #10b981; opacity: 0.6; }
+        .control-line.lcl { border-top: 2px dashed #ef4444; }
+        .control-label { position: absolute; right: 8px; top: -18px; font-size: 10px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
+        .tooltip { position: absolute; background: rgba(15, 23, 42, 0.97); border: 1px solid #334155; border-radius: 8px; padding: 12px 16px; font-size: 13px; z-index: 100; pointer-events: none; min-width: 180px; box-shadow: 0 8px 16px rgba(0,0,0,0.4); backdrop-filter: blur(8px); }
+        .tooltip-header { font-weight: 700; margin-bottom: 8px; color: #f8fafc; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .tooltip-row { margin: 4px 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+        .tooltip-row.h2 { color: #ef4444; }
+        .tooltip-row.co { color: #f59e0b; }
+        .tooltip-row.wc { color: #10b981; }
+        .x-axis { display: flex; justify-content: space-between; margin-top: 12px; padding: 0 12px; }
+        .x-tick { font-size: 11px; color: #64748b; font-weight: 600; font-variant-numeric: tabular-nums; }
+        .pan-hint { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 16px; font-size: 12px; color: #64748b; }
+        
+        /* Loading & Error */
+        .loading-container, .error-container { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 40px; color: #94a3b8; }
+        .spinner { width: 24px; height: 24px; border: 3px solid #334155; border-top-color: #3b82f6; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
       `}</style>
     </div>
   );
