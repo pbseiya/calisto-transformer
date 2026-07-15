@@ -45,6 +45,18 @@ const AnomalyDashboard = dynamic(() => import('@/components/AnomalyDashboard'), 
   ),
 });
 
+const AnomalyGaugeTimeline = dynamic(() => import('@/components/AnomalyGaugeTimeline'), {
+  ssr: false,
+  loading: () => (
+    <div className="p-6">
+      <div className="flex items-center gap-3 text-slate-400">
+        <div className="w-6 h-6 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
+        <span>Loading anomaly dashboard...</span>
+      </div>
+    </div>
+  ),
+});
+
 interface Device {
   name: string;
   ip: string;
@@ -406,6 +418,8 @@ export default function Dashboard() {
           statistics={statistics}
           thresholds={THRESHOLDS}
         />
+
+        <AnomalyGaugeTimeline />
 
         <AnomalyDashboard />
       </main>
