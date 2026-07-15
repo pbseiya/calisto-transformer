@@ -20,17 +20,13 @@ interface GaugeProps {
   title: string;
   value: number;
   threshold: number;
-  color: string;
 }
 
-function Gauge({ title, value, threshold, color }: GaugeProps) {
-  const percentage = Math.min(100, (value / (threshold * 2)) * 100);
-  const rotation = (percentage / 100) * 180;
-  
+function Gauge({ title, value, threshold }: GaugeProps) {
   const getStatusColor = () => {
-    if (value >= threshold) return '#e94560'; // Red - Danger
-    if (value >= threshold * 0.7) return '#ffd93d'; // Yellow - Warning
-    return '#4ecca3'; // Green - Normal
+    if (value >= threshold) return '#e94560';
+    if (value >= threshold * 0.7) return '#ffd93d';
+    return '#4ecca3';
   };
 
   const getStatusText = () => {
@@ -44,20 +40,18 @@ function Gauge({ title, value, threshold, color }: GaugeProps) {
       <h3>{title}</h3>
       <div className="gauge">
         <svg width="180" height="100">
-          {/* Background arc */}
           <path 
             d="M 10 90 A 80 80 0 0 1 170 90" 
             fill="none" 
             stroke="#2a3f5f" 
             strokeWidth="15"
           />
-          {/* Value arc */}
           <path 
             d="M 10 90 A 80 80 0 0 1 170 90" 
             fill="none" 
             stroke={getStatusColor()} 
             strokeWidth="15"
-            strokeDasharray={`${rotation * 1.4} 500`}
+            strokeDasharray={`${Math.min(100, (value / (threshold * 2)) * 100) * 1.4} 500`}
             strokeLinecap="round"
           />
         </svg>
@@ -80,11 +74,10 @@ export default function AnomalyGaugeTimeline() {
   useEffect(() => {
     async function loadData() {
       try {
-        // Get selected device from URL params or default to DA115
         const params = new URLSearchParams(window.location.search);
         const device = params.get('device') || 'DA115';
         
-        const response = await fetch(`/dga-api/anomaly/history?device=${device}&hours=24`);
+        const response = await fetch(`/dga/api/anomaly/history?device=${device}&hours=24`);
         if (!response.ok) throw new Error('Failed to load data');
         
         const result = await response.json();
@@ -107,7 +100,7 @@ export default function AnomalyGaugeTimeline() {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
           </svg>
-          <span>Loading anomaly data...</span>
+          <span>Loading anomaly dashboard...</span>
         </div>
       </div>
     );
@@ -125,29 +118,24 @@ export default function AnomalyGaugeTimeline() {
 
   return (
     <div className="anomaly-dashboard">
-      {/* Gauge Section */}
       <div className="gauge-section">
         <Gauge 
           title="Hydrogen (H2)" 
           value={data.current.h2_zscore} 
           threshold={data.threshold}
-          color="h2"
         />
         <Gauge 
           title="Carbon Monoxide (CO)" 
           value={data.current.co_zscore} 
           threshold={data.threshold}
-          color="co"
         />
         <Gauge 
           title="Water Content (WC)" 
           value={data.current.wc_zscore} 
           threshold={data.threshold}
-          color="wc"
         />
       </div>
 
-      {/* Timeline Section */}
       <div className="timeline-section">
         <div className="timeline-header">
           <div className="timeline-title">
@@ -166,29 +154,18 @@ export default function AnomalyGaugeTimeline() {
               <div className="legend-color" style={{ background: '#4ecca3' }}></div>
               <span>WC</span>
             </div>
-            <div className="legend-item">
-              <div className="legend-color" style={{ 
-                background: 'transparent',
-                borderTop: '2px dashed #e94560',
-                height: 0
-              }}></div>
-              <span>Threshold (z=3)</span>
-            </div>
           </div>
         </div>
 
         <div className="timeline-chart">
-          {/* Threshold lines */}
           <div className="threshold-line threshold-3"></div>
           <div className="threshold-line threshold-0"></div>
 
-          {/* SVG Chart */}
           <svg width="100%" height="100%" viewBox="0 0 1000 230" preserveAspectRatio="none">
-            {/* H2 Line */}
             <path 
               d={data.history.h2_zscores.map((z, i) => {
                 const x = (i / (data.history.h2_zscores.length - 1)) * 1000;
-                const y = 230 - (z / 6) * 230; // Scale: max z=6
+                const y = 230 - (z / 6) * 230;
                 return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
               }).join(' ')}
               stroke="#e94560" 
@@ -196,7 +173,6 @@ export default function AnomalyGaugeTimeline() {
               fill="none"
             />
             
-            {/* CO Line */}
             <path 
               d={data.history.co_zscores.map((z, i) => {
                 const x = (i / (data.history.co_zscores.length - 1)) * 1000;
@@ -208,7 +184,6 @@ export default function AnomalyGaugeTimeline() {
               fill="none"
             />
             
-            {/* WC Line */}
             <path 
               d={data.history.wc_zscores.map((z, i) => {
                 const x = (i / (data.history.wc_zscores.length - 1)) * 1000;
@@ -222,7 +197,6 @@ export default function AnomalyGaugeTimeline() {
           </svg>
         </div>
 
-        {/* Time labels */}
         <div className="timeline-labels">
           {data.history.timestamps.filter((_, i) => i % 2 === 0).map((ts, i) => (
             <span key={i}>
