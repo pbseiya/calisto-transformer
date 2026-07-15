@@ -1,7 +1,8 @@
 module.exports = {
   apps: [{
     name: 'dga-app',
-    script: '.next/standalone/server.js',
+    script: 'npm',
+    args: 'start',
     cwd: '/home/seiya/projects/calisto-transformer/dga-nextjs',
     env: {
       NODE_ENV: 'production',
