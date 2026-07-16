@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import ExportButton from '@/components/ExportButton';
+import CalendarHeatmap from '@/components/CalendarHeatmap';
 
 interface AnomalyEvent {
   id: string;
@@ -159,9 +161,13 @@ export default function AnomalyHistoryPage() {
         </div>
       </div>
       
-      {/* Results count */}
-      <div style={{ marginBottom: '12px', fontSize: '13px', color: '#94a3b8' }}>
-        Showing {events.length} of {pagination.total} events (page {pagination.page}/{pagination.total_pages})
+      <CalendarHeatmap device={filters.devices.split(',')[0] || 'DA115'} />
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+        <span style={{ fontSize: '13px', color: '#94a3b8' }}>
+          Showing {events.length} of {pagination.total} events (page {pagination.page}/{pagination.total_pages})
+        </span>
+        <ExportButton filters={filters} />
       </div>
       
       {/* Events Table */}
