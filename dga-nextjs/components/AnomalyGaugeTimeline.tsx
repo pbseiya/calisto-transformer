@@ -167,6 +167,26 @@ export default function AnomalyGaugeTimeline({ selectedDevices }: { selectedDevi
   if (error) return <div className="error-container">Error: {error}</div>;
   if (devicesData.length === 0) return <div className="no-data-message">No anomaly data available for selected devices</div>;
 
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const svgR = e.currentTarget.querySelector('svg')?.getBoundingClientRect();
+    if (!svgR || !activeData) return;
+    const ratio = Math.max(0, Math.min(1, (e.clientX - svgR.left) / svgR.width));
+    const idx = Math.round(ratio * (activeData.history.timestamps.length - 1));
+    setTooltip({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+      timestamp: activeData.history.timestamps[idx],
+      device: activeDevice,
+      h2: activeData.history.h2_zscores[idx],
+      co: activeData.history.co_zscores[idx],
+      wc: activeData.history.wc_zscores[idx],
+    });
+  };
+
+  const handleMouseLeave = () => setTooltip(null);
+
   return (
     <div className="anomaly-dashboard">
       <style>{STYLES}</style>
@@ -231,7 +251,7 @@ export default function AnomalyGaugeTimeline({ selectedDevices }: { selectedDevi
               ))}
             </div>
 
-            <div className="timeline-chart">
+            <div className="timeline-chart" onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave}>
               <div className="control-line ucl" style={{ top: `${zScoreToY(3) / 230 * 100}%` }}><span className="control-label">UCL +3σ</span></div>
               <div className="control-line center" style={{ top: `${zScoreToY(0) / 230 * 100}%` }}><span className="control-label">Center 0σ</span></div>
               <div className="control-line lcl" style={{ top: `${zScoreToY(-3) / 230 * 100}%` }}><span className="control-label">LCL -3σ</span></div>
