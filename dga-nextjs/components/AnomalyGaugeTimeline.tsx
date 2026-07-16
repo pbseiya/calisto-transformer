@@ -7,15 +7,30 @@ interface DeviceZScore {
   threshold: number;
 }
 
+const DEVICE_COLORS = [
+  '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', 
+  '#ec4899', '#14b8a6', '#f97316', '#06b6d4', '#84cc16'
+];
+
 const STYLES = `
   .anomaly-dashboard { padding: 24px; background: #0f172a; color: #e2e8f0; font-family: 'Inter', -apple-system, sans-serif; }
   .dashboard-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding: 20px 24px; background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border-radius: 12px; border: 1px solid #334155; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3); }
   .header-left { display: flex; align-items: center; gap: 20px; }
   .header-title { margin: 0; font-size: 22px; font-weight: 700; color: #f8fafc; letter-spacing: -0.5px; }
-  .device-selector { display: flex; gap: 8px; flex-wrap: wrap; max-height: 120px; overflow-y: auto; }
-  .device-btn { background: #334155; border: 1px solid #475569; color: #cbd5e1; padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-  .device-btn:hover { background: #475569; color: #f8fafc; }
-  .device-btn.active { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+  .selected-devices-list { display: flex; gap: 6px; flex-wrap: wrap; max-width: 600px; }
+  .selected-device-tag { 
+    background: rgba(59, 130, 246, 0.2); 
+    border: 1px solid rgba(59, 130, 246, 0.4); 
+    color: #93c5fd; 
+    padding: 4px 10px; 
+    border-radius: 20px; 
+    font-size: 11px; 
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .selected-device-tag:hover { background: rgba(59, 130, 246, 0.3); }
+  .selected-device-tag.active { background: #3b82f6; color: #fff; border-color: #3b82f6; }
   .header-stats { display: flex; gap: 20px; }
   .stat-item { font-size: 14px; color: #94a3b8; }
   .stat-item strong { font-weight: 700; }
@@ -27,7 +42,7 @@ const STYLES = `
   .gauge-card { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: transform 0.2s; }
   .gauge-card:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.3); }
   .gauge-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-  .gauge-device { font-size: 12px; font-weight: 700; color: #3b82f6; text-transform: uppercase; letter-spacing: 0.5px; }
+  .gauge-device { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
   .gauge-title { font-size: 16px; font-weight: 700; color: #f8fafc; }
   .gauge { width: 160px; height: 90px; margin: 0 auto; position: relative; }
   .gauge-value { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); font-size: 28px; font-weight: 800; font-variant-numeric: tabular-nums; }
@@ -41,11 +56,20 @@ const STYLES = `
   .timeline-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
   .timeline-title { display: flex; flex-direction: column; gap: 4px; }
   .timeline-label { font-size: 18px; font-weight: 700; color: #f8fafc; }
-  .timeline-subtitle { font-size: 13px; color: #64748b; }
+  .timeline-subtitle { font-size: 13px; color: #64748b; display: flex; align-items: center; gap: 8px; }
+  .multi-device-indicator { 
+    background: rgba(59, 130, 246, 0.15); 
+    border: 1px dashed rgba(59, 130, 246, 0.5); 
+    border-radius: 6px; 
+    padding: 2px 10px; 
+    font-size: 11px; 
+    color: #93c5fd;
+  }
   .timeline-controls { display: flex; gap: 8px; align-items: center; }
   .zoom-btn { background: #334155; border: 1px solid #475569; color: #cbd5e1; padding: 4px 12px; border-radius: 4px; font-size: 12px; cursor: pointer; }
   .zoom-btn:hover { background: #475569; }
-  .timeline-legend { display: flex; align-items: center; gap: 16px; font-size: 12px; }
+  .timeline-legend { display: flex; align-items: center; gap: 16px; font-size: 12px; flex-wrap: wrap; }
+  .legend-group { display: flex; align-items: center; gap: 8px; }
   .legend-item { display: flex; align-items: center; gap: 6px; color: #cbd5e1; }
   .legend-color { width: 20px; height: 3px; border-radius: 2px; }
   .legend-color.h2 { background: #ef4444; }
@@ -67,12 +91,11 @@ const STYLES = `
   .control-line.center { border-top: 2px solid #10b981; opacity: 0.6; }
   .control-line.lcl { border-top: 2px dashed #ef4444; }
   .control-label { position: absolute; right: 8px; top: -18px; font-size: 10px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
-  .tooltip { position: absolute; background: rgba(15, 23, 42, 0.97); border: 1px solid #334155; border-radius: 8px; padding: 12px 16px; font-size: 13px; z-index: 100; pointer-events: none; min-width: 180px; box-shadow: 0 8px 16px rgba(0,0,0,0.4); }
-  .tooltip-header { font-weight: 700; margin-bottom: 8px; color: #f8fafc; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
-  .tooltip-row { margin: 4px 0; font-weight: 600; font-variant-numeric: tabular-nums; }
-  .tooltip-row.h2 { color: #ef4444; }
-  .tooltip-row.co { color: #f59e0b; }
-  .tooltip-row.wc { color: #10b981; }
+  .tooltip { position: absolute; background: rgba(15, 23, 42, 0.98); border: 1px solid #334155; border-radius: 10px; padding: 14px 18px; font-size: 13px; z-index: 100; pointer-events: none; min-width: 220px; box-shadow: 0 10px 24px rgba(0,0,0,0.5); backdrop-filter: blur(10px); }
+  .tooltip-header { font-weight: 700; margin-bottom: 10px; color: #f8fafc; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #334155; padding-bottom: 8px; }
+  .tooltip-device-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-weight: 600; }
+  .tooltip-device-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .tooltip-scores { display: flex; gap: 12px; margin-left: 16px; font-size: 12px; font-variant-numeric: tabular-nums; color: #94a3b8; }
   .x-axis { display: flex; justify-content: space-between; margin-top: 12px; padding: 0 12px; }
   .x-tick { font-size: 11px; color: #64748b; font-weight: 600; font-variant-numeric: tabular-nums; }
   .pan-hint { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 16px; font-size: 12px; color: #64748b; }
@@ -82,7 +105,7 @@ const STYLES = `
   .no-data-message { text-align: center; padding: 40px; color: #64748b; font-size: 14px; }
 `;
 
-function Gauge({ device, title, value, threshold }: { device: string; title: string; value: number; threshold: number }) {
+function Gauge({ device, title, value, threshold, color }: { device: string; title: string; value: number; threshold: number; color?: string }) {
   const getColor = () => value >= threshold ? '#ef4444' : value >= threshold * 0.7 ? '#f59e0b' : '#10b981';
   const getColorText = () => value >= threshold ? 'status-danger' : value >= threshold * 0.7 ? 'status-warning' : 'status-normal';
   const arcLength = Math.max(12, Math.min(100, (value / threshold) * 50));
@@ -90,7 +113,7 @@ function Gauge({ device, title, value, threshold }: { device: string; title: str
   return (
     <div className="gauge-card">
       <div className="gauge-header">
-        <span className="gauge-device">{device}</span>
+        <span className="gauge-device" style={{ color: color || '#3b82f6' }}>{device}</span>
         <span className="gauge-title">{title}</span>
       </div>
       <div className="gauge">
@@ -115,7 +138,10 @@ export default function AnomalyGaugeTimeline({ selectedDevices }: { selectedDevi
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeDevice, setActiveDevice] = useState<string>('');
-  const [tooltip, setTooltip] = useState<{x: number; y: number; timestamp: string; device: string; h2: number; co: number; wc: number} | null>(null);
+  const [tooltip, setTooltip] = useState<{
+    x: number; y: number; timestamp: string; 
+    devices: Array<{ device: string; h2: number; co: number; wc: number; color: string }>;
+  } | null>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [panOffset, setPanOffset] = useState(0);
   const [isPanning, setIsPanning] = useState(false);
@@ -178,19 +204,26 @@ export default function AnomalyGaugeTimeline({ selectedDevices }: { selectedDevi
     
     const rect = e.currentTarget.getBoundingClientRect();
     const svgR = e.currentTarget.querySelector('svg')?.getBoundingClientRect();
-    if (!svgR || !activeData) return;
+    if (!svgR || devicesData.length === 0) return;
     const ratio = Math.max(0, Math.min(1, (e.clientX - svgR.left) / svgR.width));
-    const idx = Math.round(ratio * (activeData.history.timestamps.length - 1));
+    const idx = Math.round(ratio * (devicesData[0]?.history.timestamps.length - 1));
+    
+    // Collect z-scores from ALL selected devices at this timestamp
+    const deviceScores = devicesData.map((d, i) => ({
+      device: d.device,
+      h2: d.history.h2_zscores[idx],
+      co: d.history.co_zscores[idx],
+      wc: d.history.wc_zscores[idx],
+      color: DEVICE_COLORS[i % DEVICE_COLORS.length],
+    }));
+    
     setTooltip({
       x: e.clientX - rect.left,
       y: e.clientY - rect.top,
-      timestamp: activeData.history.timestamps[idx],
-      device: activeDevice,
-      h2: activeData.history.h2_zscores[idx],
-      co: activeData.history.co_zscores[idx],
-      wc: activeData.history.wc_zscores[idx],
+      timestamp: devicesData[0].history.timestamps[idx],
+      devices: deviceScores,
     });
-  }, [isPanning, panStart, activeData, activeDevice]);
+  }, [isPanning, panStart, devicesData]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     setIsPanning(true);
@@ -240,9 +273,14 @@ export default function AnomalyGaugeTimeline({ selectedDevices }: { selectedDevi
       <div className="dashboard-header">
         <div className="header-left">
           <h2 className="header-title">Z-Score Anomaly Monitor</h2>
-          <div className="device-selector">
-            {devicesData.map(d => (
-              <button key={d.device} className={`device-btn ${d.device === activeDevice ? 'active' : ''}`} onClick={() => setActiveDevice(d.device)}>
+          <div className="selected-devices-list">
+            {devicesData.map((d, i) => (
+              <button 
+                key={d.device} 
+                className={`selected-device-tag ${d.device === activeDevice ? 'active' : ''}`}
+                onClick={() => setActiveDevice(d.device)}
+                style={{ borderColor: DEVICE_COLORS[i % DEVICE_COLORS.length] }}
+              >
                 {d.device}
               </button>
             ))}
@@ -262,9 +300,9 @@ export default function AnomalyGaugeTimeline({ selectedDevices }: { selectedDevi
       <div className="gauge-section">
         {activeData && (
           <div className="gauge-row">
-            <Gauge device={activeDevice} title="H₂" value={activeData.current.h2_zscore} threshold={activeData.threshold} />
-            <Gauge device={activeDevice} title="CO" value={activeData.current.co_zscore} threshold={activeData.threshold} />
-            <Gauge device={activeDevice} title="WC" value={activeData.current.wc_zscore} threshold={activeData.threshold} />
+            <Gauge device={activeDevice} title="H₂" value={activeData.current.h2_zscore} threshold={activeData.threshold} color={DEVICE_COLORS[devicesData.findIndex(d => d.device === activeDevice) % DEVICE_COLORS.length]} />
+            <Gauge device={activeDevice} title="CO" value={activeData.current.co_zscore} threshold={activeData.threshold} color={DEVICE_COLORS[devicesData.findIndex(d => d.device === activeDevice) % DEVICE_COLORS.length]} />
+            <Gauge device={activeDevice} title="WC" value={activeData.current.wc_zscore} threshold={activeData.threshold} color={DEVICE_COLORS[devicesData.findIndex(d => d.device === activeDevice) % DEVICE_COLORS.length]} />
           </div>
         )}
       </div>
@@ -274,7 +312,14 @@ export default function AnomalyGaugeTimeline({ selectedDevices }: { selectedDevi
           <div className="timeline-header">
             <div className="timeline-title">
               <span className="timeline-label">Z-Score Timeline</span>
-              <span className="timeline-subtitle">24h History · {activeDevice}</span>
+              <span className="timeline-subtitle">
+                24h History
+                {devicesData.length > 1 && (
+                  <span className="multi-device-indicator">
+                    {devicesData.length} devices · Showing: {activeDevice}
+                  </span>
+                )}
+              </span>
             </div>
             <div className="timeline-controls">
               <button className="zoom-btn" onClick={handleZoomOut}>−</button>
@@ -283,12 +328,31 @@ export default function AnomalyGaugeTimeline({ selectedDevices }: { selectedDevi
               <button className="zoom-btn" onClick={handleZoomReset}>Reset</button>
             </div>
             <div className="timeline-legend">
-              <div className="legend-item"><div className="legend-color h2"/><span>H₂</span></div>
-              <div className="legend-item"><div className="legend-color co"/><span>CO</span></div>
-              <div className="legend-item"><div className="legend-color wc"/><span>WC</span></div>
+              {/* Gas type legend */}
+              <div className="legend-group">
+                <div className="legend-item"><div className="legend-color h2"/><span>H₂</span></div>
+                <div className="legend-item"><div className="legend-color co"/><span>CO</span></div>
+                <div className="legend-item"><div className="legend-color wc"/><span>WC</span></div>
+              </div>
               <div className="legend-divider"/>
+              {/* Control limit legend */}
               <div className="legend-item"><div className="legend-line ucl"/><span>UCL +3σ</span></div>
               <div className="legend-item"><div className="legend-line lcl"/><span>LCL -3σ</span></div>
+              
+              {/* Multi-device color legend when >1 device */}
+              {devicesData.length > 1 && (
+                <>
+                  <div className="legend-divider"/>
+                  <div className="legend-group" style={{ fontSize: '11px', opacity: 0.8 }}>
+                    {devicesData.map((d, i) => (
+                      <span key={d.device} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: DEVICE_COLORS[i % DEVICE_COLORS.length], display: 'inline-block' }}/>
+                        {d.device}
+                      </span>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
@@ -316,10 +380,18 @@ export default function AnomalyGaugeTimeline({ selectedDevices }: { selectedDevi
 
               {tooltip && (
                 <div className="tooltip" style={{ left: tooltip.x, top: tooltip.y - 80 }}>
-                  <div className="tooltip-header">{tooltip.device} · {new Date(tooltip.timestamp).toLocaleTimeString()}</div>
-                  <div className="tooltip-row h2">H₂: {tooltip.h2.toFixed(2)}σ</div>
-                  <div className="tooltip-row co">CO: {tooltip.co.toFixed(2)}σ</div>
-                  <div className="tooltip-row wc">WC: {tooltip.wc.toFixed(2)}σ</div>
+                  <div className="tooltip-header">{new Date(tooltip.timestamp).toLocaleString()}</div>
+                  {tooltip.devices.map(ds => (
+                    <div key={ds.device} className="tooltip-device-row">
+                      <span className="tooltip-device-dot" style={{ background: ds.color }} />
+                      <span style={{ minWidth: '50px' }}>{ds.device}</span>
+                      <div className="tooltip-scores">
+                        <span style={{ color: '#ef4444' }}>H₂:{ds.h2.toFixed(2)}σ</span>
+                        <span style={{ color: '#f59e0b' }}>CO:{ds.co.toFixed(2)}σ</span>
+                        <span style={{ color: '#10b981' }}>WC:{ds.wc.toFixed(2)}σ</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
 
@@ -327,9 +399,49 @@ export default function AnomalyGaugeTimeline({ selectedDevices }: { selectedDevi
                 {yAxisTicks.filter(t => t !== 0).map(tick => (
                   <line key={tick} x1="0" y1={zScoreToY(tick)} x2="1000" y2={zScoreToY(tick)} stroke="#1e293b" strokeWidth="1" strokeDasharray="4 4"/>
                 ))}
-                <path d={visibleData.h2.map((z,i,a)=>`${i===0?'M':'L'} ${(i/(a.length-1||1))*1000} ${zScoreToY(z)}`).join(' ')} stroke="#ef4444" strokeWidth="2.5" fill="none" strokeLinejoin="round"/>
-                <path d={visibleData.co.map((z,i,a)=>`${i===0?'M':'L'} ${(i/(a.length-1||1))*1000} ${zScoreToY(z)}`).join(' ')} stroke="#f59e0b" strokeWidth="2.5" fill="none" strokeLinejoin="round"/>
-                <path d={visibleData.wc.map((z,i,a)=>`${i===0?'M':'L'} ${(i/(a.length-1||1))*1000} ${zScoreToY(z)}`).join(' ')} stroke="#10b981" strokeWidth="2.5" fill="none" strokeLinejoin="round"/>
+                
+                {/* Draw lines for ALL devices with different colors/patterns */}
+                {devicesData.map((d, deviceIdx) => {
+                  const color = DEVICE_COLORS[deviceIdx % DEVICE_COLORS.length];
+                  const slicedH2 = d.history.h2_zscores.slice(
+                    Math.max(0, Math.floor(panOffset / 10)),
+                    Math.min(d.history.h2_zscores.length, Math.floor(panOffset / 10) + Math.ceil(d.history.h2_zscores.length / zoomLevel))
+                  );
+                  const slicedCo = d.history.co_zscores.slice(
+                    Math.max(0, Math.floor(panOffset / 10)),
+                    Math.min(d.history.co_zscores.length, Math.floor(panOffset / 10) + Math.ceil(d.history.co_zscores.length / zoomLevel))
+                  );
+                  const slicedWc = d.history.wc_zscores.slice(
+                    Math.max(0, Math.floor(panOffset / 10)),
+                    Math.min(d.history.wc_zscores.length, Math.floor(panOffset / 10) + Math.ceil(d.history.wc_zscores.length / zoomLevel))
+                  );
+                  
+                  return (
+                    <g key={d.device}>
+                      <path 
+                        d={slicedH2.map((z,i,a)=>`${i===0?'M':'L'} ${(i/(a.length-1||1))*1000} ${zScoreToY(z)}`).join(' ')} 
+                        stroke={color} strokeWidth={d.device === activeDevice ? "3" : "1.5"} 
+                        strokeOpacity={d.device === activeDevice ? 1 : 0.5}
+                        fill="none" strokeLinejoin="round"
+                        strokeDasharray={deviceIdx === 0 ? "none" : "6 3"}
+                      />
+                      <path 
+                        d={slicedCo.map((z,i,a)=>`${i===0?'M':'L'} ${(i/(a.length-1||1))*1000} ${zScoreToY(z)}`).join(' ')} 
+                        stroke={color} strokeWidth={d.device === activeDevice ? "3" : "1.5"} 
+                        strokeOpacity={d.device === activeDevice ? 1 : 0.5}
+                        fill="none" strokeLinejoin="round"
+                        strokeDasharray={deviceIdx === 0 ? "none" : "6 3"}
+                      />
+                      <path 
+                        d={slicedWc.map((z,i,a)=>`${i===0?'M':'L'} ${(i/(a.length-1||1))*1000} ${zScoreToY(z)}`).join(' ')} 
+                        stroke={color} strokeWidth={d.device === activeDevice ? "3" : "1.5"} 
+                        strokeOpacity={d.device === activeDevice ? 1 : 0.5}
+                        fill="none" strokeLinejoin="round"
+                        strokeDasharray={deviceIdx === 0 ? "none" : "6 3"}
+                      />
+                    </g>
+                  );
+                })}
               </svg>
             </div>
           </div>
@@ -342,7 +454,7 @@ export default function AnomalyGaugeTimeline({ selectedDevices }: { selectedDevi
 
           <div className="pan-hint">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0l-4 4h3v4H3V5L0 8l3 3V8h4v4H4l4 4 4-4h-3V8h4v3l3-3-3-3v3h-4V4h3z"/></svg>
-            <span>Drag to pan · Scroll to zoom · Hover for details</span>
+            <span>Drag to pan · +/- to zoom · Hover for all devices</span>
           </div>
         </div>
       )}
