@@ -6,6 +6,7 @@ import RealtimeTable from '@/components/RealtimeTable';
 import DeviceFilter from '@/components/DeviceFilter';
 import TimeRangeFilter from '@/components/TimeRangeFilter';
 import StatsPanel from '@/components/StatsPanel';
+import ChatBotWidget from '@/components/ChatBotWidget';
 
 const Chart = dynamic(() => import('@/components/Chart'), {
   ssr: false,
@@ -45,17 +46,7 @@ const AnomalyDashboard = dynamic(() => import('@/components/AnomalyDashboard'), 
   ),
 });
 
-const AnomalyGaugeTimeline = dynamic(() => import('@/components/AnomalyGaugeTimeline'), {
-  ssr: false,
-  loading: () => (
-    <div className="p-6">
-      <div className="flex items-center gap-3 text-slate-400">
-        <div className="w-6 h-6 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
-        <span>Loading anomaly dashboard...</span>
-      </div>
-    </div>
-  ),
-});
+import AnomalyGaugeTimeline from '@/components/AnomalyGaugeTimeline';
 
 interface Device {
   name: string;
@@ -422,6 +413,7 @@ export default function Dashboard() {
         <AnomalyGaugeTimeline selectedDevices={selectedDevices} />
 
         <AnomalyDashboard />
+      <ChatBotWidget />
       </main>
     </div>
   );
