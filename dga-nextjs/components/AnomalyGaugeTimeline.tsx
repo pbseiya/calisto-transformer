@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 
 interface DeviceZScore {
   device: string;
@@ -12,11 +12,10 @@ const STYLES = `
   .dashboard-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding: 20px 24px; background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border-radius: 12px; border: 1px solid #334155; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3); }
   .header-left { display: flex; align-items: center; gap: 20px; }
   .header-title { margin: 0; font-size: 22px; font-weight: 700; color: #f8fafc; letter-spacing: -0.5px; }
-  .device-selector { display: flex; gap: 8px; flex-wrap: wrap; }
+  .device-selector { display: flex; gap: 8px; flex-wrap: wrap; max-height: 120px; overflow-y: auto; }
   .device-btn { background: #334155; border: 1px solid #475569; color: #cbd5e1; padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
   .device-btn:hover { background: #475569; color: #f8fafc; }
   .device-btn.active { background: #3b82f6; border-color: #3b82f6; color: #fff; }
-  .device-btn.disabled { opacity: 0.4; cursor: not-allowed; }
   .header-stats { display: flex; gap: 20px; }
   .stat-item { font-size: 14px; color: #94a3b8; }
   .stat-item strong { font-weight: 700; }
@@ -43,6 +42,9 @@ const STYLES = `
   .timeline-title { display: flex; flex-direction: column; gap: 4px; }
   .timeline-label { font-size: 18px; font-weight: 700; color: #f8fafc; }
   .timeline-subtitle { font-size: 13px; color: #64748b; }
+  .timeline-controls { display: flex; gap: 8px; align-items: center; }
+  .zoom-btn { background: #334155; border: 1px solid #475569; color: #cbd5e1; padding: 4px 12px; border-radius: 4px; font-size: 12px; cursor: pointer; }
+  .zoom-btn:hover { background: #475569; }
   .timeline-legend { display: flex; align-items: center; gap: 16px; font-size: 12px; }
   .legend-item { display: flex; align-items: center; gap: 6px; color: #cbd5e1; }
   .legend-color { width: 20px; height: 3px; border-radius: 2px; }
@@ -59,6 +61,7 @@ const STYLES = `
   .y-tick-label { font-size: 11px; color: #64748b; font-weight: 600; font-variant-numeric: tabular-nums; }
   .y-tick-label.zero { color: #10b981; font-weight: 700; }
   .timeline-chart { flex: 1; height: 280px; position: relative; background: #0f172a; border-radius: 8px; border: 1px solid #334155; cursor: grab; overflow: hidden; }
+  .timeline-chart:active { cursor: grabbing; }
   .control-line { position: absolute; left: 0; right: 0; pointer-events: none; }
   .control-line.ucl { border-top: 2px dashed #ef4444; }
   .control-line.center { border-top: 2px solid #10b981; opacity: 0.6; }
@@ -113,6 +116,10 @@ export default function AnomalyGaugeTimeline({ selectedDevices }: { selectedDevi
   const [error, setError] = useState<string | null>(null);
   const [activeDevice, setActiveDevice] = useState<string>('');
   const [tooltip, setTooltip] = useState<{x: number; y: number; timestamp: string; device: string; h2: number; co: number; wc: number} | null>(null);
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [panOffset, setPanOffset] = useState(0);
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState(0);
 
   useEffect(() => {
     async function load() {
@@ -120,7 +127,6 @@ export default function AnomalyGaugeTimeline({ selectedDevices }: { selectedDevi
         const p = new URLSearchParams(window.location.search);
         const devices = (selectedDevices && selectedDevices.length > 0) ? selectedDevices : [p.get('device') || 'DA115'];
         
-        // Use Promise.allSettled to handle partial failures
         const results = await Promise.allSettled(
           devices.map(async (dev) => {
             const r = await fetch(`/dga-api/anomaly/history?device=${dev}&hours=24`);
@@ -132,7 +138,6 @@ export default function AnomalyGaugeTimeline({ selectedDevices }: { selectedDevi
           })
         );
         
-        // Filter only successful results
         const successful = results
           .filter((r): r is PromiseFulfilledResult<DeviceZScore> => r.status === 'fulfilled')
           .map(r => r.value);
@@ -163,12 +168,14 @@ export default function AnomalyGaugeTimeline({ selectedDevices }: { selectedDevi
   const zScoreToY = (z: number) => 230 - ((z + 6) / 12) * 230;
   const yAxisTicks = [-6, -4, -2, 0, 2, 4, 6];
 
-  if (loading) return <div className="loading-container"><div className="spinner"/><span>Loading anomaly data...</span></div>;
-  if (error) return <div className="error-container">Error: {error}</div>;
-  if (devicesData.length === 0) return <div className="no-data-message">No anomaly data available for selected devices</div>;
-
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (isPanning) {
+      const delta = e.clientX - panStart;
+      setPanOffset(prev => prev + delta * 0.5);
+      setPanStart(e.clientX);
+      return;
+    }
+    
     const rect = e.currentTarget.getBoundingClientRect();
     const svgR = e.currentTarget.querySelector('svg')?.getBoundingClientRect();
     if (!svgR || !activeData) return;
@@ -183,9 +190,48 @@ export default function AnomalyGaugeTimeline({ selectedDevices }: { selectedDevi
       co: activeData.history.co_zscores[idx],
       wc: activeData.history.wc_zscores[idx],
     });
-  };
+  }, [isPanning, panStart, activeData, activeDevice]);
 
-  const handleMouseLeave = () => setTooltip(null);
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    setIsPanning(true);
+    setPanStart(e.clientX);
+  }, []);
+
+  const handleMouseUp = useCallback(() => {
+    setIsPanning(false);
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    setIsPanning(false);
+    setTooltip(null);
+  }, []);
+
+  const handleZoomIn = () => setZoomLevel(prev => Math.min(prev * 1.5, 4));
+  const handleZoomOut = () => setZoomLevel(prev => Math.max(prev / 1.5, 1));
+  const handleZoomReset = () => { setZoomLevel(1); setPanOffset(0); };
+
+  if (loading) return <div className="loading-container"><div className="spinner"/><span>Loading anomaly data...</span></div>;
+  if (error) return <div className="error-container">Error: {error}</div>;
+  if (devicesData.length === 0) return <div className="no-data-message">No anomaly data available for selected devices</div>;
+
+  const visibleData = activeData ? {
+    timestamps: activeData.history.timestamps.slice(
+      Math.max(0, Math.floor(panOffset / 10)),
+      Math.min(activeData.history.timestamps.length, Math.floor(panOffset / 10) + Math.ceil(activeData.history.timestamps.length / zoomLevel))
+    ),
+    h2: activeData.history.h2_zscores.slice(
+      Math.max(0, Math.floor(panOffset / 10)),
+      Math.min(activeData.history.h2_zscores.length, Math.floor(panOffset / 10) + Math.ceil(activeData.history.h2_zscores.length / zoomLevel))
+    ),
+    co: activeData.history.co_zscores.slice(
+      Math.max(0, Math.floor(panOffset / 10)),
+      Math.min(activeData.history.co_zscores.length, Math.floor(panOffset / 10) + Math.ceil(activeData.history.co_zscores.length / zoomLevel))
+    ),
+    wc: activeData.history.wc_zscores.slice(
+      Math.max(0, Math.floor(panOffset / 10)),
+      Math.min(activeData.history.wc_zscores.length, Math.floor(panOffset / 10) + Math.ceil(activeData.history.wc_zscores.length / zoomLevel))
+    ),
+  } : null;
 
   return (
     <div className="anomaly-dashboard">
@@ -223,12 +269,18 @@ export default function AnomalyGaugeTimeline({ selectedDevices }: { selectedDevi
         )}
       </div>
 
-      {activeData && (
+      {activeData && visibleData && (
         <div className="timeline-section">
           <div className="timeline-header">
             <div className="timeline-title">
               <span className="timeline-label">Z-Score Timeline</span>
               <span className="timeline-subtitle">24h History · {activeDevice}</span>
+            </div>
+            <div className="timeline-controls">
+              <button className="zoom-btn" onClick={handleZoomOut}>−</button>
+              <span style={{ fontSize: '12px', color: '#94a3b8' }}>{zoomLevel.toFixed(1)}x</span>
+              <button className="zoom-btn" onClick={handleZoomIn}>+</button>
+              <button className="zoom-btn" onClick={handleZoomReset}>Reset</button>
             </div>
             <div className="timeline-legend">
               <div className="legend-item"><div className="legend-color h2"/><span>H₂</span></div>
@@ -251,7 +303,13 @@ export default function AnomalyGaugeTimeline({ selectedDevices }: { selectedDevi
               ))}
             </div>
 
-            <div className="timeline-chart" onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave}>
+            <div 
+              className="timeline-chart"
+              onMouseMove={handleMouseMove}
+              onMouseDown={handleMouseDown}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseLeave}
+            >
               <div className="control-line ucl" style={{ top: `${zScoreToY(3) / 230 * 100}%` }}><span className="control-label">UCL +3σ</span></div>
               <div className="control-line center" style={{ top: `${zScoreToY(0) / 230 * 100}%` }}><span className="control-label">Center 0σ</span></div>
               <div className="control-line lcl" style={{ top: `${zScoreToY(-3) / 230 * 100}%` }}><span className="control-label">LCL -3σ</span></div>
@@ -269,22 +327,22 @@ export default function AnomalyGaugeTimeline({ selectedDevices }: { selectedDevi
                 {yAxisTicks.filter(t => t !== 0).map(tick => (
                   <line key={tick} x1="0" y1={zScoreToY(tick)} x2="1000" y2={zScoreToY(tick)} stroke="#1e293b" strokeWidth="1" strokeDasharray="4 4"/>
                 ))}
-                <path d={activeData.history.h2_zscores.map((z,i,a)=>`${i===0?'M':'L'} ${(i/(a.length-1||1))*1000} ${zScoreToY(z)}`).join(' ')} stroke="#ef4444" strokeWidth="2.5" fill="none" strokeLinejoin="round"/>
-                <path d={activeData.history.co_zscores.map((z,i,a)=>`${i===0?'M':'L'} ${(i/(a.length-1||1))*1000} ${zScoreToY(z)}`).join(' ')} stroke="#f59e0b" strokeWidth="2.5" fill="none" strokeLinejoin="round"/>
-                <path d={activeData.history.wc_zscores.map((z,i,a)=>`${i===0?'M':'L'} ${(i/(a.length-1||1))*1000} ${zScoreToY(z)}`).join(' ')} stroke="#10b981" strokeWidth="2.5" fill="none" strokeLinejoin="round"/>
+                <path d={visibleData.h2.map((z,i,a)=>`${i===0?'M':'L'} ${(i/(a.length-1||1))*1000} ${zScoreToY(z)}`).join(' ')} stroke="#ef4444" strokeWidth="2.5" fill="none" strokeLinejoin="round"/>
+                <path d={visibleData.co.map((z,i,a)=>`${i===0?'M':'L'} ${(i/(a.length-1||1))*1000} ${zScoreToY(z)}`).join(' ')} stroke="#f59e0b" strokeWidth="2.5" fill="none" strokeLinejoin="round"/>
+                <path d={visibleData.wc.map((z,i,a)=>`${i===0?'M':'L'} ${(i/(a.length-1||1))*1000} ${zScoreToY(z)}`).join(' ')} stroke="#10b981" strokeWidth="2.5" fill="none" strokeLinejoin="round"/>
               </svg>
             </div>
           </div>
 
           <div className="x-axis">
-            {activeData.history.timestamps.filter((_,i) => i % Math.ceil(activeData.history.timestamps.length / 8) === 0).map((ts,i) => (
+            {visibleData.timestamps.filter((_,i) => i % Math.max(1, Math.ceil(visibleData.timestamps.length / 8)) === 0).map((ts,i) => (
               <span key={i} className="x-tick">{new Date(ts).toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', hour12:false })}</span>
             ))}
           </div>
 
           <div className="pan-hint">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0l-4 4h3v4H3V5L0 8l3 3V8h4v4H4l4 4 4-4h-3V8h4v3l3-3-3-3v3h-4V4h3z"/></svg>
-            <span>Hover for details · Click device buttons to switch</span>
+            <span>Drag to pan · Scroll to zoom · Hover for details</span>
           </div>
         </div>
       )}
