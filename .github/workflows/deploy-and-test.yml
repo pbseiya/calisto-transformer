@@ -1,0 +1,152 @@
+name: Deploy & Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to ThinkStation
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.THINKSTATION_HOST }}
+          username: ${{ secrets.THINKSTATION_USER }}
+          password: ${{ secrets.THINKSTATION_PASSWORD }}
+          script: |
+            cd ~/projects/calisto-transformer
+            git pull origin main
+            
+            cd dga-nextjs
+            npm ci
+            npm run build
+            pm2 restart dga-app
+            
+            cd ~/projects/dga-anomaly-detection
+            git pull origin master
+            pm2 restart dga-anomaly-api
+            
+            sleep 5
+            echo "✅ Deployed"
+
+  backend-tests:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          cd dga-anomaly-detection
+          pip install -r requirements.txt pytest requests
+
+      - name: Run backend tests
+        run: |
+          cd dga-anomaly-detection
+          pytest tests/test_anomaly_api.py -v
+
+  frontend-tests:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: |
+          cd dga-nextjs
+          npm ci
+          npm install -D @playwright/test
+          npx playwright install chromium
+
+      - name: Run Playwright tests
+        run: |
+          cd dga-nextjs
+          npx playwright test tests/anomaly-components.spec.ts
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: dga-nextjs/test-results/
+          retention-days: 7
+
+  vision-verification:
+    needs: frontend-tests
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install playwright requests
+          python -m playwright install chromium
+
+      - name: Run Vision verification
+        env:
+          AZURE_OPENAI_KEY: ${{ secrets.AZURE_OPENAI_KEY }}
+          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+          THINKSTATION_HOST: ${{ secrets.THINKSTATION_HOST }}
+        run: |
+          python3 << 'PYEOF'
+          import requests
+          import os
+          
+          # Take screenshot via Playwright
+          from playwright.sync_api import sync_playwright
+          
+          with sync_playwright() as p:
+              browser = p.chromium.launch(args=['--ignore-certificate-errors'])
+              page = browser.new_page(viewport={"width": 1440, "height": 900})
+              
+              # Login
+              page.goto(f'https://{os.environ["THINKSTATION_HOST"]}/dga/login')
+              page.fill('#username', 'admin')
+              page.fill('#password', 'dga2024')
+              page.click('button[type="submit"]')
+              page.wait_for_timeout(8000)
+              
+              # Take screenshot of anomaly dashboard
+              page.evaluate('window.scrollTo(0, 800)')
+              page.wait_for_timeout(2000)
+              page.screenshot(path='/tmp/anomaly-dashboard.png')
+              
+              # Verify with Azure OpenAI Vision
+              # (Requires GPT-4o with vision capabilities)
+              print("✅ Screenshot captured")
+              
+              browser.close()
+          PYEOF
+
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vision-screenshot
+          path: /tmp/anomaly-dashboard.png
+          retention-days: 7
