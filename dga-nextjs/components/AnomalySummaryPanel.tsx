@@ -23,7 +23,6 @@ export default function AnomalySummaryPanel() {
       try {
         const res = await fetch('/dga-api/anomaly/events?min_zscore=3.5&limit=3&page=1');
         const data = await res.json();
-        
         setEvents(data.events || []);
         setTotalCount(data.total || 0);
       } catch(e) {
@@ -32,75 +31,66 @@ export default function AnomalySummaryPanel() {
         setLoading(false);
       }
     }
-    
     loadData();
   }, []);
 
-  if (loading) return <div style={{ background: '#1e293b', borderRadius: '8px', padding: '16px', border: '1px solid #334155' }}>Loading...</div>;
-
-  const getSeverityBadge = (sev: string) => {
-    const styles = sev === 'critical' 
-      ? { bg: 'rgba(239,68,68,0.2)', color: '#fca5a5', border: 'rgba(239,68,68,0.5)' }
-      : { bg: 'rgba(245,158,11,0.2)', color: '#fde68a', border: 'rgba(245,158,11,0.5)' };
-    
-    return (
-      <span style={{ 
-        padding: '2px 8px', borderRadius: '12px', fontSize: '10px', fontWeight: 700,
-        background: styles.bg, color: styles.color, border: `1px solid ${styles.border}`,
-        textTransform: 'capitalize'
-      }}>
-        {sev}
-      </span>
-    );
-  };
+  if (loading) return <div className="bg-slate-800 rounded-lg p-4 border border-slate-700 mb-4">Loading anomalies...</div>;
 
   return (
-    <div style={{ background: '#1e293b', borderRadius: '10px', padding: '20px', border: '1px solid #334155', boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#f8fafc' }}>Recent Anomalies</h3>
-        <span style={{ fontSize: '13px', color: '#94a3b8' }}>Last 24h</span>
+    <div className="bg-slate-800 rounded-lg border border-slate-700 mb-4 overflow-hidden">
+      {/* Compact header */}
+      <div className="flex items-center justify-between px-4 py-2 bg-slate-750 border-b border-slate-700">
+        <h3 className="text-sm font-semibold text-slate-200">⚠️ Recent Anomalies (Last 24h)</h3>
+        <span className="text-xs text-slate-400">{totalCount} events</span>
       </div>
 
-      <div style={{ marginBottom: '16px', padding: '10px 14px', background: 'rgba(59,130,246,0.1)', borderRadius: '8px', border: '1px dashed rgba(59,130,246,0.3)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-        <span style={{ color: '#93c5fd', fontSize: '13px', fontWeight: 600 }}>{totalCount} anomaly events detected</span>
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
-        {events.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '16px', color: '#64748b', fontSize: '13px' }}>No anomalies in last 24h ✓</div>
-        ) : (
-          events.map((evt) => (
-            <div key={evt.id} style={{ 
-              padding: '10px 12px', background: '#0f172a', borderRadius: '8px', 
-              border: '1px solid rgba(51,65,85,0.5)', display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-            }}>
-              <div>
-                <div style={{ fontSize: '12px', fontWeight: 700, color: '#93c5fd', marginBottom: '2px' }}>{evt.device} · {evt.gas_type}</div>
-                <div style={{ fontSize: '11px', color: '#64748b' }}>{new Date(evt.timestamp).toLocaleTimeString()}</div>
+      {events.length === 0 ? (
+        <div className="px-4 py-3 text-center text-slate-400 text-sm">No anomalies in last 24h ✓</div>
+      ) : (
+        <div className="divide-y divide-slate-700">
+          {events.map((evt) => (
+            <div key={evt.id} className="flex items-center justify-between px-4 py-2 hover:bg-slate-750">
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-mono text-slate-300 w-16">{evt.device}</span>
+                <span className="text-xs text-slate-400">{evt.gas_type}</span>
+                <span className="text-xs text-slate-500">{new Date(evt.timestamp).toLocaleTimeString()}</span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: '14px', fontWeight: 700, color: '#ef4444' }}>{evt.z_score.toFixed(1)}σ</span>
-                {getSeverityBadge(evt.severity)}
+              <div className="flex items-center gap-3">
+                <span className={`text-sm font-bold font-mono ${evt.severity === 'critical' ? 'text-red-400' : 'text-yellow-400'}`}>
+                  {evt.z_score.toFixed(1)}σ
+                </span>
+                <span className={`text-xs px-2 py-0.5 rounded ${
+                  evt.severity === 'critical' 
+                    ? 'bg-red-900/30 text-red-300' 
+                    : 'bg-yellow-900/30 text-yellow-300'
+                }`}>
+                  {evt.severity.toUpperCase()}
+                </span>
               </div>
             </div>
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
 
-      <button 
-        onClick={() => router.push('/dga/anomaly-history')}
-        style={{
-          width: '100%', padding: '10px', background: '#3b82f6', border: 'none', 
-          borderRadius: '8px', color: 'white', fontWeight: 700, fontSize: '13px',
-          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-          transition: 'background 0.2s'
-        }}
-        onMouseEnter={e => e.currentTarget.style.background = '#2563eb'}
-        onMouseLeave={e => e.currentTarget.style.background = '#3b82f6'}
-      >
-        View Full History →
-      </button>
+      {/* Action button */}
+      <div className="px-4 py-2 bg-slate-750 border-t border-slate-700 flex justify-between items-center">
+        <button 
+          onClick={() => router.push('/dga/anomaly-history')}
+          className="text-xs text-blue-400 hover:text-blue-300 hover:underline"
+        >
+          View Full History →
+        </button>
+        <button
+          onClick={() => {
+            const params = new URLSearchParams(window.location.search);
+            const devices = params.get('devices') || '';
+            window.open(`/dga-api/anomaly/export/csv?devices=${devices}&min_zscore=3.5`, '_blank');
+          }}
+          className="text-xs text-slate-400 hover:text-slate-300 hover:underline"
+        >
+          📥 Export CSV
+        </button>
+      </div>
     </div>
   );
 }
