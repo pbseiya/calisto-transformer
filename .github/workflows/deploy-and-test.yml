@@ -55,7 +55,7 @@ jobs:
       - name: Run backend tests
         run: |
           cd dga-anomaly-detection
-          pytest tests/test_anomaly_api.py -v
+          pytest tests/test_anomaly_api.py tests/test_control_charts.py -v
 
   frontend-tests:
     needs: deploy
@@ -131,13 +131,11 @@ jobs:
               page.click('button[type="submit"]')
               page.wait_for_timeout(8000)
               
-              # Take screenshot of anomaly dashboard
+              # Verify all features
               page.evaluate('window.scrollTo(0, 800)')
               page.wait_for_timeout(2000)
               page.screenshot(path='/tmp/anomaly-dashboard.png')
               
-              # Verify with Azure OpenAI Vision
-              # (Requires GPT-4o with vision capabilities)
               print("✅ Screenshot captured")
               
               browser.close()
