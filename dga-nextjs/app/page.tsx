@@ -7,6 +7,8 @@ import DeviceFilter from '@/components/DeviceFilter';
 import TimeRangeFilter from '@/components/TimeRangeFilter';
 import StatsPanel from '@/components/StatsPanel';
 import ChatBotWidget from '@/components/ChatBotWidget';
+import AnomalySummaryPanel from '@/components/AnomalySummaryPanel';
+import ControlChartsTabs from '@/components/ControlChartsTabs';
 
 const Chart = dynamic(() => import('@/components/Chart'), {
   ssr: false,
@@ -357,6 +359,9 @@ export default function Dashboard() {
       </div>
 
       <main className="container mx-auto px-4 py-6">
+        <AnomalySummaryPanel />
+
+        <ControlChartsTabs selectedDevices={selectedDevices} />
         {error && (
           <div className="bg-red-900/50 border border-red-500 text-red-200 px-4 py-3 rounded-lg mb-4">
             {error}
@@ -405,12 +410,12 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <StatsPanel
+<StatsPanel
           statistics={statistics}
           thresholds={THRESHOLDS}
         />
 
-        <AnomalyGaugeTimeline selectedDevices={selectedDevices} />
+<AnomalyGaugeTimeline selectedDevices={selectedDevices} />
 
         <AnomalyDashboard />
       <ChatBotWidget />
