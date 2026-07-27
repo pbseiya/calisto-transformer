@@ -5,7 +5,9 @@
  * Documentation: https://100.123.214.57/dga-api/docs
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_DGA_API_URL || 'https://100.123.214.57/dga-api';
+const API_BASE = typeof window !== 'undefined' 
+  ? '/dga-api'  // Client-side: use relative URL (nginx proxy)
+  : (process.env.NEXT_PUBLIC_DGA_API_URL || 'https://100.123.214.57/dga-api');
 
 /* ========== TypeScript Interfaces ========== */
 
