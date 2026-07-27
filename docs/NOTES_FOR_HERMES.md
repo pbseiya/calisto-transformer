@@ -213,16 +213,27 @@ git diff
 
 ```markdown
 ### 2025-07-27 (Session 1 — Hermes)
-- งานที่ทำ: Priority #1 — Fix Telegram Alert Auto-trigger
-- Commit: 9de3d59 (master → dga-anomaly-detection)
+- งานที่ทำ: Priority #1-3 ทั้งหมด
+- Priority #1: Telegram Auto-trigger + Multi-channel (Telegram/Email/Teams)
+  - Commit: 9de3d59, 07df994, 89b8a50, 41ff727
+  - แก้ duplicate router bug (5→1), สร้าง notification.py, admin UI
+- Priority #2: Real Retrain Implementation
+  - Commit: 4bf3c48
+  - Retrain จาก synthetic samples + backup + cron ทุกวันอาทิตย์ 02:00
+- Priority #3: Database Connection (PostgreSQL)
+  - Commit: ae7f927
+  - เชื่อมต่อ postgres_db container (dga_monitor, 2.2M rows, 21 devices)
+  - detect() ใช้ข้อมูลจริงจาก DB → z-score จริง
+  - retrain() ใช้ SQL aggregation (AVG, STDDEV, PERCENTILE_CONT)
+  - detect_trend() ใช้ scipy linregress บนข้อมูลจริง
+- Frontend: Admin Alert Config UI, Admin Retrain UI
+  - Commit: d43f314, fcadfec, e075f72
+  - แก้ CORS (relative URL), TypeScript errors
 - ผลลัพธ์:
-  - ✅ แก้ duplicate router bug (5 routers → 1) — /health, /devices, /anomaly กลับมาทำงาน
-  - ✅ สร้าง telegram_alert.py (TelegramAlert class)
-  - ✅ เพิ่ม auto-trigger ใน /anomaly/control-charts
-  - ✅ เพิ่ม /test-telegram endpoint
-  - ✅ แก้ test_control_charts.py port 9000→8000 — 23/23 tests pass
-  - ✅ Production verified: /health, /devices, /control-charts, frontend 308
-  - ⚠️ Telegram chat not found — bot ยังไม่มีใคร /start (chat_id=-4736485987)
+  - ✅ DA08: H2 z=-9.846 (critical) — ตรวจพบ anomaly จริงจากข้อมูล
+  - ✅ DA04: H2 z=-0.395 (normal) — healthy device
+  - ✅ 23/23 control chart tests pass
+  - ✅ Production verified
 ```
 
 ---
