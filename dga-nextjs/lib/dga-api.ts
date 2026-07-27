@@ -141,3 +141,71 @@ export interface DeviceStatus {
   drift: DriftResponse;
   trend: TrendResponse;
 }
+
+/* ========== Alert Config Interfaces ========== */
+
+export interface AlertThresholds {
+  alert_24h_threshold: number;
+  alert_7d_threshold: number;
+  alert_30d_threshold: number;
+}
+
+export interface TelegramConfig {
+  enabled: boolean;
+  bot_token: string;
+  chat_id: string;
+  thread_id: number;
+}
+
+export interface EmailConfig {
+  enabled: boolean;
+  smtp_server: string;
+  smtp_port: number;
+  username: string;
+  password: string;
+  from_email: string;
+  recipients: string[];
+}
+
+export interface TeamsConfig {
+  enabled: boolean;
+  webhook_url: string;
+}
+
+export interface AlertConfig {
+  thresholds: AlertThresholds;
+  telegram: TelegramConfig;
+  email: EmailConfig;
+  teams: TeamsConfig;
+  enabled_channels: string[];
+}
+
+export interface AlertTestResult {
+  status: string;
+  results: Record<string, boolean>;
+  summary?: string;
+}
+
+/* ========== Alert Config API Functions ========== */
+
+export async function getAlertConfig(): Promise<AlertConfig> {
+  const res = await fetch(`${API_BASE}/admin/alert-config`);
+  if (!res.ok) throw new Error('Failed to fetch alert config');
+  return res.json();
+}
+
+export async function updateAlertConfig(config: AlertConfig): Promise<{ status: string; message: string }> {
+  const res = await fetch(`${API_BASE}/admin/alert-config`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  if (!res.ok) throw new Error('Failed to update alert config');
+  return res.json();
+}
+
+export async function testAlertChannels(): Promise<AlertTestResult> {
+  const res = await fetch(`${API_BASE}/admin/alert-config/test`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to test alert channels');
+  return res.json();
+}

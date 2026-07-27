@@ -268,15 +268,23 @@ export default function Dashboard() {
                 </span>
               </div>
             </div>
-            <button
-              onClick={async () => {
-                await fetch('/dga/api/auth/logout', { method: 'POST' });
-                window.location.href = '/dga/login';
-              }}
-              className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg text-sm transition-colors"
-            >
-              Logout
-            </button>
+            <div className="flex items-center gap-2">
+              <a
+                href="/dga/admin/alert-config"
+                className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm transition-colors"
+              >
+                ⚙️ Alert Config
+              </a>
+              <button
+                onClick={async () => {
+                  await fetch('/dga/api/auth/logout', { method: 'POST' });
+                  window.location.href = '/dga/login';
+                }}
+                className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg text-sm transition-colors"
+              >
+                Logout
+              </button>
+            </div>
           </div>
         </div>
       </header>

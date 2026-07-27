@@ -112,7 +112,7 @@ export default function ControlChartsTabs({ selectedDevices, device }: Props) {
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
               <XAxis dataKey="time" stroke="#94a3b8" style={{ fontSize: '10px' }} interval={Math.max(1, Math.floor(chartData.length / 8))} />
               <YAxis stroke="#94a3b8" style={{ fontSize: '11px' }} tickFormatter={(v) => `${v.toFixed(0)}σ·h`} domain={[0, yMax]} width={60} />
-              <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }} formatter={(value: number) => `${value.toFixed(2)} σ·h`} labelFormatter={(label) => `Time: ${label}`} />
+              <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }} formatter={(value) => `${Number(value).toFixed(2)} σ·h`} labelFormatter={(label) => `Time: ${label}`} />
 
               {/* CONTROL ZONES: Background areas */}
               <Area type="monotone" dataKey="time" stackId="bg" stroke="none" fill="url(#cusumDangerGradient)" fillOpacity={0} yAxisId="right" style={{ display: 'none' }} />
