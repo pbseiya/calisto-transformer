@@ -212,10 +212,17 @@ git diff
 ใช้ไฟล์นี้เพิ่มบรรทัดทุกครั้งที่ทำงานเสร็จ:
 
 ```markdown
-### 2025-07-27
-- งานที่ทำ: ...
-- Commit: ...
-- ผลลัพธ์: ...
+### 2025-07-27 (Session 1 — Hermes)
+- งานที่ทำ: Priority #1 — Fix Telegram Alert Auto-trigger
+- Commit: 9de3d59 (master → dga-anomaly-detection)
+- ผลลัพธ์:
+  - ✅ แก้ duplicate router bug (5 routers → 1) — /health, /devices, /anomaly กลับมาทำงาน
+  - ✅ สร้าง telegram_alert.py (TelegramAlert class)
+  - ✅ เพิ่ม auto-trigger ใน /anomaly/control-charts
+  - ✅ เพิ่ม /test-telegram endpoint
+  - ✅ แก้ test_control_charts.py port 9000→8000 — 23/23 tests pass
+  - ✅ Production verified: /health, /devices, /control-charts, frontend 308
+  - ⚠️ Telegram chat not found — bot ยังไม่มีใคร /start (chat_id=-4736485987)
 ```
 
 ---
