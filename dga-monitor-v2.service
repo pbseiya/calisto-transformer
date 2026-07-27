@@ -1,0 +1,23 @@
+[Unit]
+Description=DGA Monitor v2 - Enhanced Reliability
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=seiya
+WorkingDirectory=/home/seiya/projects/calisto-transformer
+ExecStart=/usr/bin/python3 /home/seiya/projects/calisto-transformer/dga_monitor_v2.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/seiya/projects/calisto-transformer/dga_monitor_v2.log
+StandardError=append:/home/seiya/projects/calisto-transformer/dga_monitor_v2_error.log
+
+Environment=PYTHONUNBUFFERED=1
+Environment=TMPDIR=/home/seiya/tmp
+
+# Health check
+WatchdogSec=60
+
+[Install]
+WantedBy=multi-user.target
