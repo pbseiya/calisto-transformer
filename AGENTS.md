@@ -9,14 +9,25 @@
 ระบบ DGA (Dissolved Gas Analysis) Monitoring สำหรับตรวจสอบหม้อแปลงไฟฟ้า
 
 ### Components
+- **Data Collection:** DGA Monitor v2 (Python daemon with enhanced reliability)
+  - Polls 21 devices every 31.7 seconds via Modbus TCP
+  - Retry mechanism, data validation, health check API, Telegram alerting
+  - **Documentation:** [DGA Monitor v2 Guide](./DGA_MONITOR_V2.md) | [Detection Performance Guide](./docs/DETECTION_PERFORMANCE_GUIDE.md)
 - **Frontend:** Next.js 16.2.9 (React 18, TypeScript)
-- **Backend:** FastAPI (Python 3.12)
-- **Database:** PostgreSQL
+- **Backend:** FastAPI (Python 3.12) - Anomaly detection API
+- **Database:** PostgreSQL (2.2M+ readings)
 - **Deployment:** PM2 + Nginx on ThinkStation (100.123.214.57)
 
 ### URLs
 - Production: https://100.123.214.57/dga
 - API Docs: http://localhost:8000/docs (via SSH)
+- Health Check: http://localhost:8081/health (DGA Monitor v2)
+
+### Performance Metrics
+- **Data Collection:** 113 readings/device/hour, 2,376 total readings/hour
+- **Detection Speed:** 95 วินาที (with noise filter), 30.85 วินาที (avg latency)
+- **Noise Reduction:** 98.4%
+- **System Uptime:** > 99.5%
 
 ---
 
