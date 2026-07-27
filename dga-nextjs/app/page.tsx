@@ -275,6 +275,12 @@ export default function Dashboard() {
               >
                 ⚙️ Alert Config
               </a>
+              <a
+                href="/dga/admin/retrain"
+                className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-lg text-sm transition-colors"
+              >
+                🔄 Retrain
+              </a>
               <button
                 onClick={async () => {
                   await fetch('/dga/api/auth/logout', { method: 'POST' });
