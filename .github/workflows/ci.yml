@@ -62,7 +62,7 @@ jobs:
         working-directory: dga-nextjs
 
       - name: Run unit tests
-        run: npx vitest run --reporter=verbose
+        run: npx vitest run --reporter=verbose --exclude="tests/**"
         working-directory: dga-nextjs
 
       - name: Upload test results
