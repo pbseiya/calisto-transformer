@@ -2,13 +2,20 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  # ============================================
+  # Stage 1: Code Quality
+  # ============================================
   lint-and-typecheck:
-    name: Lint & Type Check
+    name: 🔍 Lint & Type Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,21 +31,20 @@ jobs:
         run: npm ci
         working-directory: dga-nextjs
 
-      - name: Run lint
+      - name: Run ESLint
         run: npm run lint
         working-directory: dga-nextjs
         continue-on-error: true
 
-      - name: Type check
+      - name: TypeScript type check
         run: npx tsc --noEmit
         working-directory: dga-nextjs
 
-      - name: Build test
-        run: npm run build
-        working-directory: dga-nextjs
-
+  # ============================================
+  # Stage 2: Unit Tests
+  # ============================================
   unit-tests:
-    name: Unit Tests
+    name: 🧪 Unit Tests
     runs-on: ubuntu-latest
     needs: lint-and-typecheck
     steps:
@@ -55,8 +61,96 @@ jobs:
         run: npm ci
         working-directory: dga-nextjs
 
-      - name: Run tests
-        run: npx vitest run
+      - name: Run unit tests
+        run: npx vitest run --reporter=verbose
         working-directory: dga-nextjs
-        if: ${{ hashFiles('dga-nextjs/__tests__/**') != '' }}
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ github.sha }}
+          path: dga-nextjs/test-results/
+          retention-days: 7
+
+  # ============================================
+  # Stage 3: Build Verification
+  # ============================================
+  build:
+    name: 🔨 Build
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: dga-nextjs/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: dga-nextjs
+
+      - name: Build application
+        run: npm run build
+        working-directory: dga-nextjs
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ github.sha }}
+          path: |
+            dga-nextjs/.next/
+            dga-nextjs/public/
+            dga-nextjs/package.json
+            dga-nextjs/package-lock.json
+          retention-days: 7
+
+  # ============================================
+  # Stage 4: Backend Tests (if applicable)
+  # ============================================
+  backend-tests:
+    name: 🐍 Backend Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          cd dga-anomaly-detection
+          pip install -r requirements.txt pytest requests
         continue-on-error: true
+
+      - name: Run backend tests
+        run: |
+          cd dga-anomaly-detection
+          pytest tests/ -v --tb=short
+        continue-on-error: true
+
+  # ============================================
+  # Summary
+  # ============================================
+  ci-summary:
+    name: ✅ CI Summary
+    runs-on: ubuntu-latest
+    needs: [lint-and-typecheck, unit-tests, build]
+    if: always()
+    steps:
+      - name: Check results
+        run: |
+          if [ "${{ needs.lint-and-typecheck.result }}" != "success" ] || \
+             [ "${{ needs.unit-tests.result }}" != "success" ] || \
+             [ "${{ needs.build.result }}" != "success" ]; then
+            echo "❌ CI failed"
+            exit 1
+          fi
+          echo "✅ All CI checks passed"

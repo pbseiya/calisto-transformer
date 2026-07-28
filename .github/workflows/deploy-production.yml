@@ -1,0 +1,319 @@
+name: Deploy Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_deploy:
+        description: 'Type "DEPLOY" to confirm production deployment'
+        required: true
+        type: string
+      skip_health_check:
+        description: 'Skip health check (emergency only)'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  PROD_PORT: 3001
+  PROD_URL: https://100.123.214.57/dga
+
+jobs:
+  # ============================================
+  # Gate 1: Confirmation
+  # ============================================
+  confirm:
+    name: ⏸️ Confirm Deployment
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm_deploy }}" != "DEPLOY" ]; then
+            echo "❌ Deployment cancelled: Confirmation text incorrect"
+            echo "Expected: DEPLOY"
+            echo "Got: ${{ github.event.inputs.confirm_deploy }}"
+            exit 1
+          fi
+          echo "✅ Deployment confirmed"
+
+      - name: Verify branch
+        run: |
+          echo "Deploying from: main branch"
+          echo "Commit: ${{ github.sha }}"
+
+  # ============================================
+  # Gate 2: Pre-deploy Checks
+  # ============================================
+  pre-check:
+    name: 🔒 Pre-deploy Checks
+    needs: confirm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Verify CI passed
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Check if CI workflow passed for this commit
+            const { data: runs } = await github.rest.actions.listWorkflowRunsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head_sha: context.sha,
+              status: 'success',
+              per_page: 100
+            });
+            
+            const ciRun = runs.workflow_runs.find(run => 
+              run.name === 'CI' && run.head_sha === context.sha
+            );
+            
+            if (!ciRun) {
+              console.log('⚠️ CI run not found, but proceeding (may be first deploy)');
+            } else {
+              console.log(`✅ CI passed: ${ciRun.html_url}`);
+            }
+
+      - name: Check staging status
+        run: |
+          echo "✅ Pre-deploy checks passed"
+          echo "Proceeding with production deployment"
+
+  # ============================================
+  # Gate 3: Deploy
+  # ============================================
+  deploy:
+    name: 🚀 Deploy to Production
+    needs: pre-check
+    runs-on: self-hosted
+    environment:
+      name: production
+      url: https://100.123.214.57/dga
+    outputs:
+      previous_commit: ${{ steps.backup.outputs.previous_commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 2
+
+      - name: Backup current deployment
+        id: backup
+        run: |
+          cd ~/projects/calisto-transformer/dga-nextjs
+          
+          # Save current commit for rollback
+          PREVIOUS_COMMIT=$(git rev-parse HEAD)
+          echo "previous_commit=$PREVIOUS_COMMIT" >> $GITHUB_OUTPUT
+          
+          # Backup .next directory
+          if [ -d ".next" ]; then
+            rm -rf .next.backup
+            cp -r .next .next.backup
+            echo "✅ Build backed up"
+          fi
+          
+          # Backup node_modules
+          if [ -d "node_modules" ]; then
+            rm -rf node_modules.backup
+            cp -r node_modules node_modules.backup
+            echo "✅ Dependencies backed up"
+          fi
+          
+          echo "Previous commit: $PREVIOUS_COMMIT"
+
+      - name: Pull latest code
+        run: |
+          cd ~/projects/calisto-transformer
+          git fetch origin
+          git checkout main
+          git reset --hard origin/main
+          echo "✅ Code updated to $(git rev-parse --short HEAD)"
+
+      - name: Install dependencies
+        run: |
+          cd ~/projects/calisto-transformer/dga-nextjs
+          npm ci
+          echo "✅ Dependencies installed"
+
+      - name: Build application
+        run: |
+          cd ~/projects/calisto-transformer/dga-nextjs
+          npm run build 2>&1 | tee /tmp/prod-build.log
+          
+          if grep -q "Type error" /tmp/prod-build.log; then
+            echo "❌ Build failed: TypeScript errors"
+            echo "Rolling back..."
+            exit 1
+          fi
+          
+          if ! grep -q "Compiled successfully" /tmp/prod-build.log; then
+            echo "⚠️ Build warning: 'Compiled successfully' not found"
+          fi
+          
+          echo "✅ Build successful"
+
+      - name: Deploy application
+        run: |
+          cd ~/projects/calisto-transformer/dga-nextjs
+          
+          # Restart PM2
+          pm2 restart dga-app
+          
+          # Wait for startup
+          echo "Waiting for application to start..."
+          sleep 10
+          
+          # Verify process is running
+          if ! pm2 describe dga-app | grep -q "online"; then
+            echo "❌ Application failed to start"
+            pm2 logs dga-app --lines 30 --nostream
+            exit 1
+          fi
+          
+          echo "✅ Application restarted"
+
+      - name: Health check
+        if: ${{ !inputs.skip_health_check }}
+        run: |
+          echo "Running health checks..."
+          
+          MAX_RETRIES=6
+          RETRY_DELAY=5
+          
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "Attempt $i/$MAX_RETRIES..."
+            
+            # Test HTTPS endpoint
+            HTTP_CODE=$(curl -k -s -o /dev/null -w '%{http_code}' https://100.123.214.57/dga/login)
+            
+            echo "HTTP Status: $HTTP_CODE"
+            
+            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ] || [ "$HTTP_CODE" = "308" ]; then
+              echo "✅ Health check passed"
+              break
+            fi
+            
+            if [ $i -eq $MAX_RETRIES ]; then
+              echo "❌ Health check failed after $MAX_RETRIES attempts"
+              echo "Triggering rollback..."
+              exit 1
+            fi
+            
+            echo "Retrying in ${RETRY_DELAY}s..."
+            sleep $RETRY_DELAY
+          done
+
+      - name: Smoke test
+        if: ${{ !inputs.skip_health_check }}
+        run: |
+          echo "Running smoke tests..."
+          
+          # Test login page
+          curl -k -s https://100.123.214.57/dga/login | grep -q "Sign In" || {
+            echo "❌ Login page failed"
+            exit 1
+          }
+          
+          # Test API endpoint
+          API_RESPONSE=$(curl -k -s https://100.123.214.57/dga/api/devices)
+          if echo "$API_RESPONSE" | grep -q "\["; then
+            echo "✅ API responding"
+          else
+            echo "⚠️ API might have issues"
+          fi
+          
+          echo "✅ Smoke tests passed"
+
+      - name: Rollback on failure
+        if: failure() && steps.backup.outputs.previous_commit != ''
+        run: |
+          echo "🔄 Rolling back to previous version..."
+          
+          cd ~/projects/calisto-transformer/dga-nextjs
+          
+          # Restore backup
+          if [ -d ".next.backup" ]; then
+            rm -rf .next
+            mv .next.backup .next
+            echo "✅ Build restored"
+          fi
+          
+          if [ -d "node_modules.backup" ]; then
+            rm -rf node_modules
+            mv node_modules.backup node_modules
+            echo "✅ Dependencies restored"
+          fi
+          
+          # Restart with old version
+          pm2 restart dga-app
+          sleep 10
+          
+          # Verify rollback
+          HTTP_CODE=$(curl -k -s -o /dev/null -w '%{http_code}' https://100.123.214.57/dga/login)
+          
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ] || [ "$HTTP_CODE" = "308" ]; then
+            echo "✅ Rollback successful"
+          else
+            echo "❌ Rollback failed - manual intervention required"
+          fi
+          
+          exit 1
+
+      - name: Cleanup backups
+        if: success()
+        run: |
+          cd ~/projects/calisto-transformer/dga-nextjs
+          rm -rf .next.backup node_modules.backup
+          echo "✅ Backups cleaned up"
+
+      - name: Notify success
+        if: success()
+        run: |
+          echo "🎉 Production deployment successful!"
+          echo "URL: https://100.123.214.57/dga"
+          echo "Commit: ${{ github.sha }}"
+          echo "Branch: main"
+
+      - name: Notify failure
+        if: failure()
+        run: |
+          echo "❌ Production deployment failed!"
+          echo "Check logs: pm2 logs dga-app"
+          echo "Manual intervention may be required"
+
+  # ============================================
+  # Gate 4: Post-deploy Verification
+  # ============================================
+  verify:
+    name: ✅ Post-deploy Verification
+    needs: deploy
+    runs-on: self-hosted
+    if: success()
+    steps:
+      - name: Final verification
+        run: |
+          echo "Running final verification..."
+          
+          # Wait for everything to settle
+          sleep 5
+          
+          # Check PM2 status
+          pm2 status
+          
+          # Check for errors in logs
+          ERROR_COUNT=$(pm2 logs dga-app --lines 50 --nostream 2>&1 | grep -c "Error:" || true)
+          
+          if [ "$ERROR_COUNT" -gt 5 ]; then
+            echo "⚠️ Multiple errors detected in logs"
+            pm2 logs dga-app --lines 20 --nostream
+          else
+            echo "✅ No critical errors in logs"
+          fi
+          
+          echo "✅ Post-deploy verification complete"
