@@ -1,0 +1,110 @@
+name: Emergency Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_commit:
+        description: 'Commit SHA to rollback to (leave empty for previous)'
+        required: false
+        type: string
+      reason:
+        description: 'Reason for rollback'
+        required: true
+        type: string
+
+concurrency:
+  group: rollback-production
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    name: 🔄 Emergency Rollback
+    runs-on: self-hosted
+    environment:
+      name: production
+      url: https://100.123.214.57/dga
+    steps:
+      - name: Log rollback reason
+        run: |
+          echo "🚨 EMERGENCY ROLLBACK"
+          echo "Reason: ${{ github.event.inputs.reason }}"
+          echo "Target commit: ${{ github.event.inputs.target_commit || 'previous' }}"
+          echo "Triggered by: ${{ github.actor }}"
+          echo "Time: $(date)"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 10
+
+      - name: Determine target commit
+        id: target
+        run: |
+          cd ~/projects/calisto-transformer
+          
+          if [ -n "${{ github.event.inputs.target_commit }}" ]; then
+            TARGET="${{ github.event.inputs.target_commit }}"
+          else
+            # Get previous commit
+            TARGET=$(git rev-parse HEAD~1)
+          fi
+          
+          echo "target=$TARGET" >> $GITHUB_OUTPUT
+          echo "Rolling back to: $TARGET"
+
+      - name: Rollback code
+        run: |
+          cd ~/projects/calisto-transformer
+          
+          # Checkout target commit
+          git checkout ${{ steps.target.outputs.target }}
+          
+          echo "✅ Code rolled back to $(git rev-parse --short HEAD)"
+
+      - name: Rebuild and deploy
+        run: |
+          cd ~/projects/calisto-transformer/dga-nextjs
+          
+          # Reinstall dependencies
+          npm ci
+          
+          # Rebuild
+          npm run build 2>&1 | tee /tmp/rollback-build.log
+          
+          if grep -q "Type error" /tmp/rollback-build.log; then
+            echo "❌ Rollback build failed"
+            exit 1
+          fi
+          
+          # Restart
+          pm2 restart dga-app
+          
+          echo "✅ Application rebuilt and restarted"
+
+      - name: Health check
+        run: |
+          echo "Verifying rollback..."
+          sleep 10
+          
+          HTTP_CODE=$(curl -k -s -o /dev/null -w '%{http_code}' https://100.123.214.57/dga/login)
+          
+          echo "HTTP Status: $HTTP_CODE"
+          
+          if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "302" ] && [ "$HTTP_CODE" != "308" ]; then
+            echo "❌ Rollback verification failed"
+            exit 1
+          fi
+          
+          echo "✅ Rollback successful"
+
+      - name: Summary
+        run: |
+          echo "🔄 Rollback Complete"
+          echo "Target commit: ${{ steps.target.outputs.target }}"
+          echo "Reason: ${{ github.event.inputs.reason }}"
+          echo "Status: ✅ Success"
+          echo ""
+          echo "⚠️ Remember to:"
+          echo "1. Fix the issue in develop branch"
+          echo "2. Test thoroughly"
+          echo "3. Create new PR to main"
