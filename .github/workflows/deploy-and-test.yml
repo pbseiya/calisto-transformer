@@ -8,32 +8,38 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy to ThinkStation
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.THINKSTATION_HOST }}
-          username: ${{ secrets.THINKSTATION_USER }}
-          password: ${{ secrets.THINKSTATION_PASSWORD }}
-          script: |
-            cd ~/projects/calisto-transformer
-            git pull origin main
-            
-            cd dga-nextjs
-            npm ci
-            npm run build
-            pm2 restart dga-app
-            
-            cd ~/projects/dga-anomaly-detection
-            git pull origin master
-            pm2 restart dga-anomaly-api
-            
-            sleep 5
-            echo "✅ Deployed"
+      - name: Deploy frontend
+        run: |
+          cd ~/projects/calisto-transformer
+          git pull origin main
+          
+          cd dga-nextjs
+          npm ci
+          npm run build
+          pm2 restart dga-app
+          
+          sleep 5
+          echo "✅ Frontend deployed"
+
+      - name: Deploy backend
+        run: |
+          cd ~/projects/dga-anomaly-detection
+          git pull origin master
+          pm2 restart dga-anomaly-api
+          
+          sleep 5
+          echo "✅ Backend deployed"
+
+      - name: Verify deployment
+        run: |
+          curl -k -o /dev/null -w '%{http_code}' https://100.123.214.57/dga/
+          echo ""
+          echo "✅ Deployment verified"
 
   backend-tests:
     needs: deploy
