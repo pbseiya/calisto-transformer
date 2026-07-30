@@ -24,8 +24,28 @@ export default function ControlChartsTabs({ selectedDevices, device }: Props) {
   const [specThresholds, setSpecThresholds] = useState<SpecThresholds | null>(null);
   const [currentPpm, setCurrentPpm] = useState<number>(0);
   const [specStatus, setSpecStatus] = useState<string>('normal');
+  const [availableDevices, setAvailableDevices] = useState<string[]>([]);
+  const [selectedDeviceIdx, setSelectedDeviceIdx] = useState(0);
 
-  const currentDevice = device || (selectedDevices && selectedDevices.length > 0 ? selectedDevices[0] : 'DA115');
+  const devicesList = device ? [device] : (selectedDevices && selectedDevices.length > 0 ? selectedDevices : ['DA115']);
+  const currentDevice = devicesList[selectedDeviceIdx] || devicesList[0] || 'DA115';
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadDevices() {
+      try {
+        const res = await fetch('/dga-api/devices');
+        if (res.ok) {
+          const data = await res.json();
+          setAvailableDevices(data.devices || []);
+        }
+      } catch (e) {
+        console.error('Failed to load devices:', e);
+      }
+    }
+    loadDevices();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,12 +104,26 @@ export default function ControlChartsTabs({ selectedDevices, device }: Props) {
     : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50';
   const specLabel = specStatus === 'danger' ? 'DANGER' : specStatus === 'warning' ? 'WARNING' : 'NORMAL';
 
+  const devicesToShow = devicesList.length > 0 ? devicesList : availableDevices.slice(0, 5);
+
   return (
     <div className="bg-slate-800 rounded-lg p-6 mb-6">
       <div className="flex justify-between items-center mb-4">
         <h3 className="text-xl font-semibold text-slate-200">🎯 3-Tier Control Chart Analysis</h3>
         <div className="flex items-center gap-3">
-          <div className="text-sm text-slate-400">Device: <span className="text-blue-400 font-mono">{currentDevice}</span></div>
+          <div className="text-sm text-slate-400">Device:</div>
+          <select 
+            value={currentDevice}
+            onChange={(e) => {
+              const idx = devicesList.indexOf(e.target.value);
+              if (idx >= 0) setSelectedDeviceIdx(idx);
+            }}
+            className="bg-slate-700 text-blue-400 font-mono text-sm px-3 py-1 rounded border border-slate-600 focus:outline-none focus:border-blue-500"
+          >
+            {devicesToShow.map((d, i) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
           <div className="text-sm text-slate-400">|</div>
           <div className="text-sm text-slate-400">H₂: <span className="text-white font-mono">{currentPpm.toFixed(0)} ppm</span></div>
           <div className={`text-xs font-mono px-2 py-1 rounded border ${specBadgeColor}`}>
@@ -98,7 +132,6 @@ export default function ControlChartsTabs({ selectedDevices, device }: Props) {
         </div>
       </div>
       
-      {/* Hybrid approach explanation */}
       <div className="bg-slate-700/30 rounded-lg p-3 mb-4 text-xs text-slate-400">
         <span className="text-slate-300 font-medium">Hybrid Alert Logic:</span> Alert triggers when <span className="text-blue-400">z-score anomaly</span> AND <span className="text-amber-400">IEC/IEEE spec exceeded</span>
         {specThresholds && (
@@ -134,7 +167,7 @@ export default function ControlChartsTabs({ selectedDevices, device }: Props) {
         </div>
       )}
 
-      {/* 7d CUSUM - WITH CONTROL LIMITS */}
+      {/* 7d CUSUM */}
       {(activeTab === 'all' || activeTab === '7d') && (
         <div className="mb-6">
           <div className="flex justify-between items-center mb-2">
@@ -162,14 +195,10 @@ export default function ControlChartsTabs({ selectedDevices, device }: Props) {
               <XAxis dataKey="time" stroke="#94a3b8" style={{ fontSize: '10px' }} interval={Math.max(1, Math.floor(chartData.length / 8))} />
               <YAxis stroke="#94a3b8" style={{ fontSize: '11px' }} tickFormatter={(v) => `${v.toFixed(0)}σ·h`} domain={[0, yMax]} width={60} />
               <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }} formatter={(value) => `${Number(value).toFixed(2)} σ·h`} labelFormatter={(label) => `${label} — ${currentDevice}`} />
-
-              {/* CONTROL ZONES: Background areas */}
               <Area type="monotone" dataKey="time" stackId="bg" stroke="none" fill="url(#cusumDangerGradient)" fillOpacity={0} yAxisId="right" style={{ display: 'none' }} />
               <ReferenceLine y={5} stroke="#ef4444" strokeWidth={2} strokeDasharray="5 4" label={{ value: 'UCL 5σ·h', position: 'right', fill: '#ef4444', fontSize: 11, fontWeight: 'bold' }} />
               <ReferenceLine y={3} stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="4 3" label={{ value: 'Warning 3σ·h', position: 'right', fill: '#f59e0b', fontSize: 10 }} />
               <ReferenceLine y={0} stroke="#64748b" strokeWidth={1} strokeDasharray="2 3" label={{ value: 'Floor 0', position: 'right', fill: '#64748b', fontSize: 9 }} />
-
-              {/* CUSUM line with conditional color */}
               <Area type="monotone" dataKey="cusum" stroke="none" fill={isOutOfControl ? "url(#cusumDangerGradient)" : "url(#cusumWarningGradient)"} fillOpacity={1} />
               <Line type="monotone" dataKey="cusum" stroke={isOutOfControl ? "#ef4444" : "#10b981"} strokeWidth={2.5} dot={false} name={`${currentDevice} CUSUM`} />
             </AreaChart>
