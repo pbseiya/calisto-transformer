@@ -8,11 +8,22 @@ interface Props {
   device?: string;
 }
 
+interface SpecThresholds {
+  normal: number;
+  warning: number;
+  danger: number;
+  unit: string;
+  gas_name: string;
+}
+
 export default function ControlChartsTabs({ selectedDevices, device }: Props) {
   const [activeTab, setActiveTab] = useState<'all' | '24h' | '7d' | '30d'>('all');
   const [chartData, setChartData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [specThresholds, setSpecThresholds] = useState<SpecThresholds | null>(null);
+  const [currentPpm, setCurrentPpm] = useState<number>(0);
+  const [specStatus, setSpecStatus] = useState<string>('normal');
 
   const currentDevice = device || (selectedDevices && selectedDevices.length > 0 ? selectedDevices[0] : 'DA115');
 
@@ -23,15 +34,24 @@ export default function ControlChartsTabs({ selectedDevices, device }: Props) {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`/dga-api/anomaly/control-charts/history?device=${encodeURIComponent(currentDevice)}&gas_type=h2&hours=168`);
-        if (!res.ok) throw new Error(`Failed to fetch: ${res.status}`);
-        const data = await res.json();
+        const historyRes = await fetch(`/dga-api/anomaly/control-charts/history?device=${encodeURIComponent(currentDevice)}&gas_type=h2&hours=168`);
+        if (!historyRes.ok) throw new Error(`Failed to fetch history: ${historyRes.status}`);
+        const historyData = await historyRes.json();
+        
+        const snapshotRes = await fetch(`/dga-api/anomaly/control-charts?device=${encodeURIComponent(currentDevice)}&gas_type=h2`);
+        if (!snapshotRes.ok) throw new Error(`Failed to fetch snapshot: ${snapshotRes.status}`);
+        const snapshotData = await snapshotRes.json();
+        
         if (cancelled) return;
 
-        const timestamps = data['24h_shewhart']?.timestamps || [];
-        const zScores = data['24h_shewhart']?.z_scores || [];
-        const cusumPlus = data['7d_cusum']?.cusum_plus || [];
-        const refZscores = data['30d_reference']?.z_scores || [];
+        setCurrentPpm(snapshotData.current_ppm || 0);
+        setSpecStatus(snapshotData.spec_status?.status || 'normal');
+        setSpecThresholds(historyData.spec_thresholds || null);
+
+        const timestamps = historyData['24h_shewhart']?.timestamps || [];
+        const zScores = historyData['24h_shewhart']?.z_scores || [];
+        const cusumPlus = historyData['7d_cusum']?.cusum_plus || [];
+        const refZscores = historyData['30d_reference']?.z_scores || [];
 
         const chart = timestamps.map((ts: string, i: number) => ({
           time: new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
@@ -59,12 +79,35 @@ export default function ControlChartsTabs({ selectedDevices, device }: Props) {
   const isOutOfControl = maxCusum >= 5;
   const yMax = Math.max(6, maxCusum * 1.3);
 
+  const specBadgeColor = specStatus === 'danger' ? 'bg-red-500/20 text-red-400 border-red-500/50' 
+    : specStatus === 'warning' ? 'bg-amber-500/20 text-amber-400 border-amber-500/50'
+    : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50';
+  const specLabel = specStatus === 'danger' ? 'DANGER' : specStatus === 'warning' ? 'WARNING' : 'NORMAL';
+
   return (
     <div className="bg-slate-800 rounded-lg p-6 mb-6">
       <div className="flex justify-between items-center mb-4">
         <h3 className="text-xl font-semibold text-slate-200">🎯 3-Tier Control Chart Analysis</h3>
-        <div className="text-sm text-slate-400">Device: <span className="text-blue-400 font-mono">{currentDevice}</span></div>
+        <div className="flex items-center gap-3">
+          <div className="text-sm text-slate-400">Device: <span className="text-blue-400 font-mono">{currentDevice}</span></div>
+          <div className="text-sm text-slate-400">|</div>
+          <div className="text-sm text-slate-400">H₂: <span className="text-white font-mono">{currentPpm.toFixed(0)} ppm</span></div>
+          <div className={`text-xs font-mono px-2 py-1 rounded border ${specBadgeColor}`}>
+            IEC: {specLabel}
+          </div>
+        </div>
       </div>
+      
+      {/* Hybrid approach explanation */}
+      <div className="bg-slate-700/30 rounded-lg p-3 mb-4 text-xs text-slate-400">
+        <span className="text-slate-300 font-medium">Hybrid Alert Logic:</span> Alert triggers when <span className="text-blue-400">z-score anomaly</span> AND <span className="text-amber-400">IEC/IEEE spec exceeded</span>
+        {specThresholds && (
+          <span className="ml-2">
+            (H₂: Normal &lt;{specThresholds.normal}, Warning &lt;{specThresholds.warning}, Danger ≥{specThresholds.warning} ppm)
+          </span>
+        )}
+      </div>
+
       <div className="flex gap-2 mb-4">
         {tabs.map(tab => (<button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-4 py-2 rounded text-sm font-medium transition-colors ${activeTab === tab.id ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}>{tab.label}</button>))}
       </div>
@@ -73,7 +116,7 @@ export default function ControlChartsTabs({ selectedDevices, device }: Props) {
       {(activeTab === 'all' || activeTab === '24h') && (
         <div className="mb-6">
           <div className="flex justify-between items-center mb-2">
-            <div className="text-sm text-slate-400">24h Shewhart History (±4σ)</div>
+            <div className="text-sm text-slate-400">24h Shewhart History (±4σ) — detects sudden spikes</div>
             <div className="text-xs text-blue-400 font-mono bg-slate-700/50 px-2 py-1 rounded">📊 {currentDevice}</div>
           </div>
           <ResponsiveContainer width="100%" height={280}>
@@ -96,7 +139,7 @@ export default function ControlChartsTabs({ selectedDevices, device }: Props) {
         <div className="mb-6">
           <div className="flex justify-between items-center mb-2">
             <div className="flex items-center gap-3">
-              <div className="text-sm text-slate-400">7d CUSUM Accumulation (one-sided, k=0.5σ)</div>
+              <div className="text-sm text-slate-400">7d CUSUM Accumulation (one-sided, k=0.5σ) — detects increasing trends</div>
               <div className="text-xs text-blue-400 font-mono bg-slate-700/50 px-2 py-1 rounded">📊 {currentDevice}</div>
             </div>
             <div className={`text-xs font-mono px-2 py-1 rounded ${isOutOfControl ? 'bg-red-500/20 text-red-400 border border-red-500/50' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50'}`}>
@@ -143,7 +186,7 @@ export default function ControlChartsTabs({ selectedDevices, device }: Props) {
       {(activeTab === 'all' || activeTab === '30d') && (
         <div className="mb-6">
           <div className="flex justify-between items-center mb-2">
-            <div className="text-sm text-slate-400">30d Reference Deviation (±3.5σ)</div>
+            <div className="text-sm text-slate-400">30d Reference Deviation (±3.5σ) — detects baseline drift</div>
             <div className="text-xs text-blue-400 font-mono bg-slate-700/50 px-2 py-1 rounded">📊 {currentDevice}</div>
           </div>
           <ResponsiveContainer width="100%" height={280}>
