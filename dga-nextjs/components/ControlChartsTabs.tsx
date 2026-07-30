@@ -72,17 +72,20 @@ export default function ControlChartsTabs({ selectedDevices, device }: Props) {
       {/* 24h Shewhart */}
       {(activeTab === 'all' || activeTab === '24h') && (
         <div className="mb-6">
-          <div className="text-sm text-slate-400 mb-2">24h Shewhart History (±4σ)</div>
+          <div className="flex justify-between items-center mb-2">
+            <div className="text-sm text-slate-400">24h Shewhart History (±4σ)</div>
+            <div className="text-xs text-blue-400 font-mono bg-slate-700/50 px-2 py-1 rounded">📊 {currentDevice}</div>
+          </div>
           <ResponsiveContainer width="100%" height={280}>
             <LineChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
               <XAxis dataKey="time" stroke="#94a3b8" style={{ fontSize: '10px' }} interval={Math.max(1, Math.floor(chartData.length / 8))} />
               <YAxis stroke="#94a3b8" style={{ fontSize: '11px' }} tickFormatter={(v) => `${v}σ`} domain={[-6, 6]} />
-              <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }} />
+              <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }} labelFormatter={(label) => `${label} — ${currentDevice}`} />
               <ReferenceLine y={4} stroke="#ef4444" strokeDasharray="5 5" label={{ value: 'UCL 4σ', position: 'right', fill: '#ef4444' }} />
               <ReferenceLine y={-4} stroke="#ef4444" strokeDasharray="5 5" label={{ value: 'LCL -4σ', position: 'right', fill: '#ef4444' }} />
               <ReferenceLine y={0} stroke="#10b981" strokeDasharray="3 3" />
-              <Line type="monotone" dataKey="shewhart" stroke="#3b82f6" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="shewhart" stroke="#3b82f6" strokeWidth={2} dot={false} name={`${currentDevice} z-score`} />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -92,7 +95,10 @@ export default function ControlChartsTabs({ selectedDevices, device }: Props) {
       {(activeTab === 'all' || activeTab === '7d') && (
         <div className="mb-6">
           <div className="flex justify-between items-center mb-2">
-            <div className="text-sm text-slate-400">7d CUSUM Accumulation (one-sided, k=0.5σ)</div>
+            <div className="flex items-center gap-3">
+              <div className="text-sm text-slate-400">7d CUSUM Accumulation (one-sided, k=0.5σ)</div>
+              <div className="text-xs text-blue-400 font-mono bg-slate-700/50 px-2 py-1 rounded">📊 {currentDevice}</div>
+            </div>
             <div className={`text-xs font-mono px-2 py-1 rounded ${isOutOfControl ? 'bg-red-500/20 text-red-400 border border-red-500/50' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50'}`}>
               {isOutOfControl ? '️ OUT OF CONTROL' : '✓ IN CONTROL'}
             </div>
@@ -112,7 +118,7 @@ export default function ControlChartsTabs({ selectedDevices, device }: Props) {
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
               <XAxis dataKey="time" stroke="#94a3b8" style={{ fontSize: '10px' }} interval={Math.max(1, Math.floor(chartData.length / 8))} />
               <YAxis stroke="#94a3b8" style={{ fontSize: '11px' }} tickFormatter={(v) => `${v.toFixed(0)}σ·h`} domain={[0, yMax]} width={60} />
-              <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }} formatter={(value) => `${Number(value).toFixed(2)} σ·h`} labelFormatter={(label) => `Time: ${label}`} />
+              <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }} formatter={(value) => `${Number(value).toFixed(2)} σ·h`} labelFormatter={(label) => `${label} — ${currentDevice}`} />
 
               {/* CONTROL ZONES: Background areas */}
               <Area type="monotone" dataKey="time" stackId="bg" stroke="none" fill="url(#cusumDangerGradient)" fillOpacity={0} yAxisId="right" style={{ display: 'none' }} />
@@ -122,7 +128,7 @@ export default function ControlChartsTabs({ selectedDevices, device }: Props) {
 
               {/* CUSUM line with conditional color */}
               <Area type="monotone" dataKey="cusum" stroke="none" fill={isOutOfControl ? "url(#cusumDangerGradient)" : "url(#cusumWarningGradient)"} fillOpacity={1} />
-              <Line type="monotone" dataKey="cusum" stroke={isOutOfControl ? "#ef4444" : "#10b981"} strokeWidth={2.5} dot={false} />
+              <Line type="monotone" dataKey="cusum" stroke={isOutOfControl ? "#ef4444" : "#10b981"} strokeWidth={2.5} dot={false} name={`${currentDevice} CUSUM`} />
             </AreaChart>
           </ResponsiveContainer>
           <div className="flex gap-4 mt-2 text-xs text-slate-500 justify-end pr-4">
@@ -136,17 +142,20 @@ export default function ControlChartsTabs({ selectedDevices, device }: Props) {
       {/* 30d Reference */}
       {(activeTab === 'all' || activeTab === '30d') && (
         <div className="mb-6">
-          <div className="text-sm text-slate-400 mb-2">30d Reference Deviation (±3.5σ)</div>
+          <div className="flex justify-between items-center mb-2">
+            <div className="text-sm text-slate-400">30d Reference Deviation (±3.5σ)</div>
+            <div className="text-xs text-blue-400 font-mono bg-slate-700/50 px-2 py-1 rounded">📊 {currentDevice}</div>
+          </div>
           <ResponsiveContainer width="100%" height={280}>
             <LineChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
               <XAxis dataKey="time" stroke="#94a3b8" style={{ fontSize: '10px' }} interval={Math.max(1, Math.floor(chartData.length / 8))} />
               <YAxis stroke="#94a3b8" style={{ fontSize: '11px' }} tickFormatter={(v) => `${v}σ`} domain={[-6, 6]} />
-              <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }} />
+              <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }} labelFormatter={(label) => `${label} — ${currentDevice}`} />
               <ReferenceLine y={3.5} stroke="#ef4444" strokeDasharray="5 5" label={{ value: 'UCL 3.5σ', position: 'right', fill: '#ef4444' }} />
               <ReferenceLine y={-3.5} stroke="#ef4444" strokeDasharray="5 5" label={{ value: 'LCL -3.5σ', position: 'right', fill: '#ef4444' }} />
               <ReferenceLine y={0} stroke="#10b981" strokeDasharray="3 3" />
-              <Line type="monotone" dataKey="reference" stroke="#10b981" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="reference" stroke="#10b981" strokeWidth={2} dot={false} name={`${currentDevice} z-score`} />
             </LineChart>
           </ResponsiveContainer>
         </div>
